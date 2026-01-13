@@ -1,0 +1,24 @@
+{
+  "name": "trador",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm run dev -w @trador/api",
+    "dev:web": "npm run dev -w @trador/web",
+    "build": "npm run build -w @trador/api && npm run build -w @trador/web",
+    "build:api": "npm run build -w @trador/api",
+    "build:web": "npm run build -w @trador/web",
+    "start": "npm run start -w @trador/api",
+    "db:generate": "npm run db:generate -w @trador/api",
+    "db:migrate": "npm run db:migrate -w @trador/api",
+    "db:push": "npm run db:push -w @trador/api"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  }
+}

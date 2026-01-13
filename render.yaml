@@ -1,0 +1,29 @@
+# Render Blueprint
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: trador
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trador-db
+          property: connectionString
+      - key: EXCHANGE_ID
+        value: binance
+      - key: EXCHANGE_TEST_MODE
+        value: "true"
+      - key: EXCHANGE_API_KEY
+        sync: false
+      - key: EXCHANGE_SECRET
+        sync: false
+
+databases:
+  - name: trador-db
+    plan: starter
+    databaseName: trador
+    postgresMajorVersion: "16"

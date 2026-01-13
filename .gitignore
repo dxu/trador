@@ -1,0 +1,14 @@
+node_modules
+dist
+.DS_Store
+*.log
+.env
+.env.local
+.env.*.local
+
+# Drizzle
+packages/api/drizzle
+
+# Build
+packages/web/dist
+packages/api/dist

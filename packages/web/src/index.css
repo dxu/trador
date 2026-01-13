@@ -1,0 +1,199 @@
+@import url('https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #0c0a20;
+  --bg-secondary: #151331;
+  --bg-card: #1a1840;
+  --border-color: rgba(99, 102, 241, 0.2);
+  --text-primary: #f0f4ff;
+  --text-secondary: #a5b4fc;
+  --accent-green: #a3e635;
+  --accent-red: #ef4444;
+  --accent-blue: #6366f1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Clash Display', system-ui, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Background pattern */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(163, 230, 53, 0.08), transparent),
+    linear-gradient(180deg, var(--bg-primary) 0%, #0f0d28 100%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Grid pattern overlay */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--accent-blue);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #818cf8;
+}
+
+/* Card styles */
+.card {
+  @apply bg-midnight-950/60 backdrop-blur-sm border border-midnight-800/50 rounded-2xl;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.card-glow {
+  position: relative;
+}
+
+.card-glow::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), transparent, rgba(163, 230, 53, 0.2));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Button styles */
+.btn-primary {
+  @apply px-6 py-3 bg-gradient-to-r from-indigo-600 to-indigo-500 rounded-xl font-semibold text-white;
+  @apply hover:from-indigo-500 hover:to-indigo-400 transition-all duration-200;
+  @apply shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40;
+}
+
+.btn-success {
+  @apply px-6 py-3 bg-gradient-to-r from-volt-500 to-emerald-500 rounded-xl font-semibold text-midnight-950;
+  @apply hover:from-volt-400 hover:to-emerald-400 transition-all duration-200;
+  @apply shadow-lg shadow-volt-500/25 hover:shadow-volt-500/40;
+}
+
+.btn-danger {
+  @apply px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 rounded-xl font-semibold text-white;
+  @apply hover:from-red-500 hover:to-red-400 transition-all duration-200;
+  @apply shadow-lg shadow-red-500/25 hover:shadow-red-500/40;
+}
+
+.btn-ghost {
+  @apply px-6 py-3 bg-midnight-900/50 border border-midnight-700 rounded-xl font-semibold;
+  @apply hover:bg-midnight-800/50 hover:border-midnight-600 transition-all duration-200;
+}
+
+/* Stat number styling */
+.stat-value {
+  @apply font-mono text-3xl font-bold tracking-tight;
+}
+
+.stat-positive {
+  @apply text-volt-400;
+}
+
+.stat-negative {
+  @apply text-red-400;
+}
+
+/* Status indicator */
+.status-dot {
+  @apply w-2 h-2 rounded-full;
+}
+
+.status-dot.running {
+  @apply bg-volt-400 animate-pulse;
+  box-shadow: 0 0 8px rgb(163 230 53 / 0.6);
+}
+
+.status-dot.paused {
+  @apply bg-amber-400;
+}
+
+.status-dot.stopped {
+  @apply bg-red-400;
+}
+
+/* Table styles */
+.data-table {
+  @apply w-full;
+}
+
+.data-table th {
+  @apply text-left text-xs uppercase tracking-wider text-midnight-400 font-medium pb-3 border-b border-midnight-800;
+}
+
+.data-table td {
+  @apply py-3 border-b border-midnight-800/50 font-mono text-sm;
+}
+
+.data-table tr:last-child td {
+  @apply border-b-0;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.animate-stagger > * {
+  opacity: 0;
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.animate-stagger > *:nth-child(1) { animation-delay: 0.05s; }
+.animate-stagger > *:nth-child(2) { animation-delay: 0.1s; }
+.animate-stagger > *:nth-child(3) { animation-delay: 0.15s; }
+.animate-stagger > *:nth-child(4) { animation-delay: 0.2s; }
+.animate-stagger > *:nth-child(5) { animation-delay: 0.25s; }
+.animate-stagger > *:nth-child(6) { animation-delay: 0.3s; }
