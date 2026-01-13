@@ -1,87 +1,72 @@
-import { useState } from 'react';
-import useSWR from 'swr';
-import { format } from 'date-fns';
-import { api } from '../api';
-import type { BotLog } from '../types';
-import { 
-  ScrollText,
-  Filter,
-  AlertTriangle,
-  Info,
-  Zap,
-  AlertCircle,
-} from 'lucide-react';
+import { useState } from "react";
+import useSWR from "swr";
+import { format } from "date-fns";
+import { api } from "../api";
+import type { BotLog } from "../types";
 
-type FilterLevel = 'all' | 'info' | 'warn' | 'error' | 'action';
+type FilterLevel = "all" | "info" | "warn" | "error" | "action";
 
 export function LogsPanel() {
-  const [levelFilter, setLevelFilter] = useState<FilterLevel>('all');
-  
+  const [levelFilter, setLevelFilter] = useState<FilterLevel>("all");
+
   const { data: logs, isLoading } = useSWR(
-    ['logs', levelFilter],
-    () => api.getLogs({ 
-      limit: 200, 
-      level: levelFilter === 'all' ? undefined : levelFilter 
-    }),
+    ["logs", levelFilter],
+    () =>
+      api.getLogs({
+        limit: 200,
+        level: levelFilter === "all" ? undefined : levelFilter,
+      }),
     { refreshInterval: 10000 }
   );
 
-  const filters: { id: FilterLevel; label: string; icon: React.ReactNode }[] = [
-    { id: 'all', label: 'All', icon: <Filter className="w-3 h-3" /> },
-    { id: 'action', label: 'Actions', icon: <Zap className="w-3 h-3" /> },
-    { id: 'info', label: 'Info', icon: <Info className="w-3 h-3" /> },
-    { id: 'warn', label: 'Warnings', icon: <AlertTriangle className="w-3 h-3" /> },
-    { id: 'error', label: 'Errors', icon: <AlertCircle className="w-3 h-3" /> },
+  const filters: { id: FilterLevel; label: string }[] = [
+    { id: "all", label: "All" },
+    { id: "action", label: "Actions" },
+    { id: "info", label: "Info" },
+    { id: "warn", label: "Warnings" },
+    { id: "error", label: "Errors" },
   ];
 
-  const levelColors: Record<string, { bg: string; text: string; border: string }> = {
-    info: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/30' },
-    warn: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
-    error: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30' },
-    action: { bg: 'bg-volt-500/10', text: 'text-volt-400', border: 'border-volt-500/30' },
-  };
-
-  const levelIcons: Record<string, React.ReactNode> = {
-    info: <Info className="w-4 h-4" />,
-    warn: <AlertTriangle className="w-4 h-4" />,
-    error: <AlertCircle className="w-4 h-4" />,
-    action: <Zap className="w-4 h-4" />,
+  const levelStyles: Record<string, string> = {
+    info: "bg-blue-50 text-blue-700 border-blue-200",
+    warn: "bg-amber-50 text-amber-700 border-amber-200",
+    error: "bg-red-50 text-red-700 border-red-200",
+    action: "bg-emerald-50 text-emerald-700 border-emerald-200",
   };
 
   // Group logs by date
-  const groupedLogs = logs?.reduce((acc, log) => {
-    const date = format(new Date(log.createdAt), 'yyyy-MM-dd');
-    if (!acc[date]) acc[date] = [];
-    acc[date].push(log);
-    return acc;
-  }, {} as Record<string, BotLog[]>) || {};
+  const groupedLogs =
+    logs?.reduce((acc, log) => {
+      const date = format(new Date(log.createdAt), "yyyy-MM-dd");
+      if (!acc[date]) acc[date] = [];
+      acc[date].push(log);
+      return acc;
+    }, {} as Record<string, BotLog[]>) || {};
 
   return (
-    <div className="space-y-6 animate-stagger">
-      {/* Header with Filters */}
-      <div className="card p-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-white rounded-xl border border-surface-200 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <ScrollText className="w-5 h-5 text-indigo-400" />
-            <h2 className="text-lg font-semibold">Activity Log</h2>
-            <span className="text-sm text-midnight-400">
+            <h2 className="font-semibold text-surface-900">Activity Log</h2>
+            <span className="text-sm text-surface-400">
               {logs?.length || 0} entries
             </span>
           </div>
-          
-          {/* Filter Tabs */}
-          <div className="flex items-center gap-1 bg-midnight-900/50 rounded-lg p-1">
+
+          {/* Filters */}
+          <div className="flex items-center gap-1 bg-surface-100 rounded-lg p-1">
             {filters.map((filter) => (
               <button
                 key={filter.id}
                 onClick={() => setLevelFilter(filter.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   levelFilter === filter.id
-                    ? 'bg-indigo-500 text-white'
-                    : 'text-midnight-400 hover:text-white'
+                    ? "bg-white text-surface-900 shadow-sm"
+                    : "text-surface-500 hover:text-surface-700"
                 }`}
               >
-                {filter.icon}
                 {filter.label}
               </button>
             ))}
@@ -89,69 +74,62 @@ export function LogsPanel() {
         </div>
       </div>
 
-      {/* Logs List */}
+      {/* Logs */}
       {isLoading ? (
-        <div className="card p-8 text-center text-midnight-400">Loading logs...</div>
+        <div className="bg-white rounded-xl border border-surface-200 py-12 text-center text-surface-400">
+          Loading...
+        </div>
       ) : logs && logs.length > 0 ? (
         <div className="space-y-6">
           {Object.entries(groupedLogs).map(([date, dayLogs]) => (
             <div key={date}>
-              {/* Date Header */}
-              <div className="sticky top-20 z-10 bg-midnight-950/90 backdrop-blur-sm py-2 mb-3">
-                <h3 className="text-sm font-medium text-midnight-400">
-                  {format(new Date(date), 'EEEE, MMMM d, yyyy')}
-                </h3>
-              </div>
-              
-              {/* Logs for this day */}
-              <div className="space-y-2">
+              <h3 className="text-sm font-medium text-surface-500 mb-3">
+                {format(new Date(date), "EEEE, MMMM d, yyyy")}
+              </h3>
+
+              <div className="bg-white rounded-xl border border-surface-200 divide-y divide-surface-100">
                 {dayLogs.map((log) => {
-                  const colors = levelColors[log.level] || levelColors.info;
-                  const icon = levelIcons[log.level] || levelIcons.info;
-                  
+                  const style = levelStyles[log.level] || levelStyles.info;
+
                   return (
-                    <div
-                      key={log.id}
-                      className={`card p-4 ${colors.bg} border ${colors.border}`}
-                    >
+                    <div key={log.id} className="p-4">
                       <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 ${colors.text}`}>
-                          {icon}
-                        </div>
+                        <span
+                          className={`text-xs font-medium px-2 py-0.5 rounded border ${style}`}
+                        >
+                          {log.level}
+                        </span>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-xs font-medium uppercase ${colors.text}`}>
-                              {log.level}
-                            </span>
-                            <span className="text-xs text-midnight-500">
-                              {log.category}
-                            </span>
-                            <span className="text-xs text-midnight-600">•</span>
-                            <span className="text-xs text-midnight-500 font-mono">
-                              {format(new Date(log.createdAt), 'HH:mm:ss')}
+                          <div className="flex items-center gap-2 text-xs text-surface-400 mb-1">
+                            <span>{log.category}</span>
+                            <span>·</span>
+                            <span className="font-mono">
+                              {format(new Date(log.createdAt), "HH:mm:ss")}
                             </span>
                             {log.price && (
                               <>
-                                <span className="text-xs text-midnight-600">•</span>
-                                <span className="text-xs text-midnight-400 font-mono">
-                                  ${log.price.toFixed(2)}
+                                <span>·</span>
+                                <span className="font-mono">
+                                  ${log.price.toFixed(0)}
                                 </span>
                               </>
                             )}
                           </div>
-                          <p className="text-sm text-midnight-200">{log.message}</p>
-                          
-                          {/* Regime Badge */}
+                          <p className="text-sm text-surface-700">
+                            {log.message}
+                          </p>
                           {log.regime && (
-                            <div className="mt-2">
-                              <span className={`text-xs px-2 py-0.5 rounded ${
-                                log.regime.includes('fear') ? 'bg-volt-500/20 text-volt-400' :
-                                log.regime.includes('greed') ? 'bg-red-500/20 text-red-400' :
-                                'bg-midnight-700 text-midnight-300'
-                              }`}>
-                                {log.regime.replace('_', ' ')}
-                              </span>
-                            </div>
+                            <span
+                              className={`inline-block mt-2 text-xs px-2 py-0.5 rounded ${
+                                log.regime.includes("fear")
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : log.regime.includes("greed")
+                                  ? "bg-orange-50 text-orange-700"
+                                  : "bg-surface-100 text-surface-600"
+                              }`}
+                            >
+                              {log.regime.replace("_", " ")}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -163,10 +141,8 @@ export function LogsPanel() {
           ))}
         </div>
       ) : (
-        <div className="card p-8 text-center text-midnight-400">
-          <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p>No logs found.</p>
-          <p className="text-sm mt-1">Start the bot to see activity.</p>
+        <div className="bg-white rounded-xl border border-surface-200 py-12 text-center text-surface-400">
+          No logs found
         </div>
       )}
     </div>

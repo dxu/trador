@@ -6,127 +6,117 @@ import { TransactionsPanel } from "./components/TransactionsPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { LogsPanel } from "./components/LogsPanel";
 import { BacktestPanel } from "./components/BacktestPanel";
-import {
-  Activity,
-  LayoutDashboard,
-  Settings,
-  TrendingUp,
-  ScrollText,
-  FlaskConical,
-} from "lucide-react";
 
 type Tab = "dashboard" | "backtest" | "transactions" | "logs" | "settings";
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<Tab>("dashboard");
+  const [activeTab, setActiveTab] = useState<Tab>("backtest");
   const { data: dashboard, mutate } = useSWR("dashboard", api.getDashboard, {
-    refreshInterval: 30000, // Refresh every 30 seconds (patient strategy)
+    refreshInterval: 30000,
   });
 
   const tabs = [
-    { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
-    { id: "backtest" as const, label: "Backtest", icon: FlaskConical },
-    { id: "transactions" as const, label: "Transactions", icon: Activity },
-    { id: "logs" as const, label: "Activity Log", icon: ScrollText },
-    { id: "settings" as const, label: "Settings", icon: Settings },
+    { id: "dashboard" as const, label: "Dashboard" },
+    { id: "backtest" as const, label: "Backtest" },
+    { id: "transactions" as const, label: "Transactions" },
+    { id: "logs" as const, label: "Logs" },
+    { id: "settings" as const, label: "Settings" },
   ];
 
   const getStatusColor = (status?: string) => {
     switch (status) {
       case "running":
-        return "bg-volt-400";
+        return "bg-success";
       case "paused":
-        return "bg-amber-400";
+        return "bg-warning";
       case "error":
-        return "bg-red-400";
+        return "bg-danger";
       default:
-        return "bg-midnight-500";
+        return "bg-surface-400";
     }
   };
 
-  const getRegimeColor = (regime?: string) => {
-    switch (regime) {
-      case "extreme_fear":
-        return "text-volt-400 bg-volt-400/10";
-      case "fear":
-        return "text-emerald-400 bg-emerald-400/10";
-      case "neutral":
-        return "text-midnight-300 bg-midnight-700";
-      case "greed":
-        return "text-amber-400 bg-amber-400/10";
-      case "extreme_greed":
-        return "text-red-400 bg-red-400/10";
-      default:
-        return "text-midnight-400 bg-midnight-800";
-    }
+  const getRegimeLabel = (regime?: string) => {
+    if (!regime) return null;
+    const labels: Record<string, { text: string; color: string }> = {
+      extreme_fear: {
+        text: "Extreme Fear",
+        color: "bg-emerald-100 text-emerald-700",
+      },
+      fear: { text: "Fear", color: "bg-emerald-50 text-emerald-600" },
+      neutral: { text: "Neutral", color: "bg-surface-100 text-surface-600" },
+      greed: { text: "Greed", color: "bg-orange-50 text-orange-600" },
+      extreme_greed: {
+        text: "Extreme Greed",
+        color: "bg-red-100 text-red-700",
+      },
+    };
+    return labels[regime] || null;
   };
+
+  const regime = getRegimeLabel(dashboard?.market?.regime);
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-surface-50">
       {/* Header */}
-      <header className="sticky top-0 z-50 backdrop-blur-xl bg-midnight-950/80 border-b border-midnight-800/50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
+      <header className="bg-white border-b border-surface-200">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="flex items-center justify-between h-16">
+            {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-volt-400 flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-midnight-950" />
+              <div className="w-8 h-8 rounded-lg bg-surface-900 flex items-center justify-center">
+                <svg
+                  className="w-4 h-4 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+                  />
+                </svg>
               </div>
-              <div>
-                <h1 className="text-xl font-bold tracking-tight">Trador</h1>
-                <p className="text-xs text-midnight-400">
-                  Patient Regime-Based Trading
-                </p>
-              </div>
+              <span className="font-semibold text-surface-900">Trador</span>
             </div>
 
-            {/* Status Indicators */}
-            <div className="flex items-center gap-3">
-              {/* Market Regime Badge */}
-              {dashboard?.market && (
-                <div
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium ${getRegimeColor(
-                    dashboard.market.regime
-                  )}`}
+            {/* Status */}
+            <div className="flex items-center gap-4">
+              {regime && (
+                <span
+                  className={`text-xs font-medium px-2.5 py-1 rounded-full ${regime.color}`}
                 >
-                  {dashboard.market.regime.replace("_", " ").toUpperCase()}
-                </div>
+                  {regime.text}
+                </span>
               )}
 
-              {/* Bot Status */}
-              <div className="flex items-center gap-2 px-4 py-2 bg-midnight-900/50 rounded-full border border-midnight-800">
+              <div className="flex items-center gap-2">
                 <div
                   className={`w-2 h-2 rounded-full ${getStatusColor(
                     dashboard?.bot.status
-                  )} ${
-                    dashboard?.bot.status === "running" ? "animate-pulse" : ""
-                  }`}
-                  style={
-                    dashboard?.bot.status === "running"
-                      ? { boxShadow: "0 0 8px rgb(163 230 53 / 0.6)" }
-                      : {}
-                  }
+                  )}`}
                 />
-                <span className="text-sm font-medium capitalize">
-                  {dashboard?.bot.status || "Loading..."}
+                <span className="text-sm text-surface-600 capitalize">
+                  {dashboard?.bot.status || "Loading"}
                 </span>
               </div>
             </div>
           </div>
 
           {/* Navigation */}
-          <nav className="flex gap-1 mt-4 -mb-px">
+          <nav className="flex gap-6 -mb-px">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors
-                  ${
-                    activeTab === tab.id
-                      ? "bg-midnight-900/50 text-white border-b-2 border-indigo-500"
-                      : "text-midnight-400 hover:text-white hover:bg-midnight-900/30"
-                  }`}
+                className={`py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === tab.id
+                    ? "border-surface-900 text-surface-900"
+                    : "border-transparent text-surface-500 hover:text-surface-700"
+                }`}
               >
-                <tab.icon className="w-4 h-4" />
                 {tab.label}
               </button>
             ))}
@@ -135,22 +125,29 @@ export function App() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main>
         {activeTab === "dashboard" && (
-          <Dashboard dashboard={dashboard} onRefresh={mutate} />
+          <div className="max-w-6xl mx-auto px-6 py-8">
+            <Dashboard dashboard={dashboard} onRefresh={mutate} />
+          </div>
         )}
         {activeTab === "backtest" && <BacktestPanel />}
-        {activeTab === "transactions" && <TransactionsPanel />}
-        {activeTab === "logs" && <LogsPanel />}
-        {activeTab === "settings" && <SettingsPanel onUpdate={mutate} />}
+        {activeTab === "transactions" && (
+          <div className="max-w-6xl mx-auto px-6 py-8">
+            <TransactionsPanel />
+          </div>
+        )}
+        {activeTab === "logs" && (
+          <div className="max-w-6xl mx-auto px-6 py-8">
+            <LogsPanel />
+          </div>
+        )}
+        {activeTab === "settings" && (
+          <div className="max-w-6xl mx-auto px-6 py-8">
+            <SettingsPanel onUpdate={mutate} />
+          </div>
+        )}
       </main>
-
-      {/* Footer */}
-      <footer className="border-t border-midnight-800/50 py-6 mt-12">
-        <div className="max-w-7xl mx-auto px-6 text-center text-sm text-midnight-500">
-          <p>Trador v2.0 • Buy Fear, Sell Greed • Not financial advice</p>
-        </div>
-      </footer>
     </div>
   );
 }

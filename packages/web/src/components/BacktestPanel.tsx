@@ -1,122 +1,153 @@
-import { useState, useEffect } from 'react';
-import useSWR, { mutate } from 'swr';
-import { api } from '../api';
-import type { Backtest, BacktestResult, StrategyConfig } from '../types';
-import { 
-  Play, 
-  Trash2, 
-  ChevronDown, 
-  ChevronUp, 
-  Clock, 
-  TrendingUp, 
-  TrendingDown,
-  Target,
-  Percent,
-  DollarSign,
-  BarChart3,
-  Calendar,
-  Loader2,
-  AlertCircle,
-  CheckCircle,
-  ArrowUpRight,
-  ArrowDownRight,
-  Info,
-} from 'lucide-react';
+import { useState, useEffect } from "react";
+import useSWR, { mutate } from "swr";
+import { api } from "../api";
+import type { StrategyConfig } from "../types";
 
 // ============================================================================
 // HELPERS
 // ============================================================================
 
 function formatDate(date: string | Date): string {
-  return new Date(date).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+  return new Date(date).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
 }
 
-function formatNumber(value: number | null | undefined, decimals: number = 2): string {
-  if (value === null || value === undefined) return '-';
+function formatNumber(
+  value: number | null | undefined,
+  decimals: number = 2
+): string {
+  if (value === null || value === undefined) return "—";
   return value.toFixed(decimals);
 }
 
 function formatPercent(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '-';
-  const sign = value >= 0 ? '+' : '';
+  if (value === null || value === undefined) return "—";
+  const sign = value >= 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
 }
 
 function formatUsd(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '-';
-  const sign = value >= 0 ? '+' : '';
-  return `${sign}$${Math.abs(value).toFixed(2)}`;
+  if (value === null || value === undefined) return "—";
+  return `$${Math.abs(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 // ============================================================================
-// SUB-COMPONENTS
+// STRATEGY SELECTOR
 // ============================================================================
 
-function MetricCard({ label, value, subValue, icon: Icon, trend }: {
-  label: string;
-  value: string;
-  subValue?: string;
-  icon: React.ElementType;
-  trend?: 'up' | 'down' | 'neutral';
-}) {
-  const trendColors = {
-    up: 'text-volt-400',
-    down: 'text-red-400',
-    neutral: 'text-midnight-400',
-  };
+const CATEGORY_STYLES: Record<string, string> = {
+  conservative: "bg-blue-100 text-blue-800 border border-blue-300",
+  moderate: "bg-purple-100 text-purple-800 border border-purple-300",
+  aggressive: "bg-orange-100 text-orange-800 border border-orange-300",
+  experimental: "bg-pink-100 text-pink-800 border border-pink-300",
+};
 
+function StrategyOption({
+  strategy,
+  isSelected,
+  onSelect,
+}: {
+  strategy: StrategyConfig;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
   return (
-    <div className="bg-midnight-900/50 rounded-xl p-4 border border-midnight-800">
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className="w-4 h-4 text-midnight-400" />
-        <span className="text-sm text-midnight-400">{label}</span>
+    <button
+      onClick={onSelect}
+      className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
+        isSelected
+          ? "border-blue-500 bg-blue-50 ring-2 ring-blue-500/20"
+          : "border-gray-200 hover:border-gray-300 bg-white"
+      }`}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span
+          className={`font-semibold ${
+            isSelected ? "text-blue-900" : "text-gray-900"
+          }`}
+        >
+          {strategy.name}
+        </span>
+        <span
+          className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+            CATEGORY_STYLES[strategy.category]
+          }`}
+        >
+          {strategy.category}
+        </span>
       </div>
-      <div className={`text-2xl font-bold ${trend ? trendColors[trend] : 'text-white'}`}>
-        {value}
-      </div>
-      {subValue && (
-        <div className="text-sm text-midnight-500 mt-1">{subValue}</div>
-      )}
-    </div>
+      <p
+        className={`text-sm line-clamp-2 ${
+          isSelected ? "text-blue-700" : "text-gray-500"
+        }`}
+      >
+        {strategy.description}
+      </p>
+    </button>
   );
 }
 
-function MiniChart({ data, height = 60 }: { data: { timestamp: string; value: number }[]; height?: number }) {
+// ============================================================================
+// MINI CHART
+// ============================================================================
+
+function MiniChart({
+  data,
+  height = 80,
+}: {
+  data: { timestamp: string; value: number }[];
+  height?: number;
+}) {
   if (!data || data.length < 2) return null;
 
-  const values = data.map(d => d.value);
+  const values = data.map((d) => d.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
 
-  const points = data.map((d, i) => {
-    const x = (i / (data.length - 1)) * 100;
-    const y = 100 - ((d.value - min) / range) * 100;
-    return `${x},${y}`;
-  }).join(' ');
+  const points = data
+    .map((d, i) => {
+      const x = (i / (data.length - 1)) * 100;
+      const y = 100 - ((d.value - min) / range) * 100;
+      return `${x},${y}`;
+    })
+    .join(" ");
 
   const isPositive = values[values.length - 1] >= values[0];
 
   return (
-    <svg width="100%" height={height} viewBox="0 0 100 100" preserveAspectRatio="none">
+    <svg
+      width="100%"
+      height={height}
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      className="overflow-visible"
+    >
       <defs>
-        <linearGradient id={`chartGradient-${isPositive ? 'up' : 'down'}`} x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor={isPositive ? '#a3e635' : '#f87171'} stopOpacity="0.3" />
-          <stop offset="100%" stopColor={isPositive ? '#a3e635' : '#f87171'} stopOpacity="0" />
+        <linearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop
+            offset="0%"
+            stopColor={isPositive ? "#10b981" : "#ef4444"}
+            stopOpacity="0.15"
+          />
+          <stop
+            offset="100%"
+            stopColor={isPositive ? "#10b981" : "#ef4444"}
+            stopOpacity="0"
+          />
         </linearGradient>
       </defs>
-      <polygon
-        points={`0,100 ${points} 100,100`}
-        fill={`url(#chartGradient-${isPositive ? 'up' : 'down'})`}
-      />
+      <polygon points={`0,100 ${points} 100,100`} fill="url(#chartGradient)" />
       <polyline
         points={points}
         fill="none"
-        stroke={isPositive ? '#a3e635' : '#f87171'}
+        stroke={isPositive ? "#10b981" : "#ef4444"}
         strokeWidth="2"
         vectorEffect="non-scaling-stroke"
       />
@@ -125,84 +156,33 @@ function MiniChart({ data, height = 60 }: { data: { timestamp: string; value: nu
 }
 
 // ============================================================================
-// STRATEGY CARD
-// ============================================================================
-
-const CATEGORY_COLORS: Record<string, string> = {
-  conservative: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  moderate: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  aggressive: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  experimental: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
-};
-
-const CATEGORY_ICONS: Record<string, string> = {
-  conservative: '🐢',
-  moderate: '⚖️',
-  aggressive: '🚀',
-  experimental: '🧪',
-};
-
-function StrategyCard({ 
-  strategy, 
-  isSelected, 
-  onSelect 
-}: { 
-  strategy: StrategyConfig; 
-  isSelected: boolean; 
-  onSelect: () => void;
-}) {
-  return (
-    <div
-      onClick={onSelect}
-      className={`p-4 rounded-xl border cursor-pointer transition-all ${
-        isSelected 
-          ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/20' 
-          : 'border-midnight-700 bg-midnight-900/50 hover:border-midnight-600'
-      }`}
-    >
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">{CATEGORY_ICONS[strategy.category]}</span>
-          <h4 className="font-medium text-white">{strategy.name}</h4>
-        </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full border ${CATEGORY_COLORS[strategy.category]}`}>
-          {strategy.category}
-        </span>
-      </div>
-      <p className="text-sm text-midnight-400 line-clamp-2">{strategy.description}</p>
-    </div>
-  );
-}
-
-// ============================================================================
 // BACKTEST CONFIGURATION
 // ============================================================================
 
 function BacktestConfig({ onRun }: { onRun: () => void }) {
-  const [name, setName] = useState('');
-  const [symbol, setSymbol] = useState('BTC/USDT');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [symbol, setSymbol] = useState("BTC/USDT");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [initialCapital, setInitialCapital] = useState(1000);
-  const [selectedStrategyId, setSelectedStrategyId] = useState<string>('fear-greed-moderate');
+  const [selectedStrategyId, setSelectedStrategyId] = useState<string>("hodl");
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showAllStrategies, setShowAllStrategies] = useState(false);
 
-  // Load strategies
-  const { data: strategies } = useSWR('backtest-strategies', api.getBacktestStrategies);
+  const { data: strategies } = useSWR(
+    "backtest-strategies",
+    api.getBacktestStrategies
+  );
 
-  // Set default dates
   useEffect(() => {
     const end = new Date();
     const start = new Date();
-    start.setFullYear(start.getFullYear() - 2); // 2 years back
-    
-    setEndDate(end.toISOString().split('T')[0]);
-    setStartDate(start.toISOString().split('T')[0]);
+    start.setFullYear(start.getFullYear() - 2);
+
+    setEndDate(end.toISOString().split("T")[0]);
+    setStartDate(start.toISOString().split("T")[0]);
   }, []);
 
-  const selectedStrategy = strategies?.find(s => s.id === selectedStrategyId);
+  const selectedStrategy = strategies?.find((s) => s.id === selectedStrategyId);
 
   const handleRun = async () => {
     setError(null);
@@ -210,155 +190,101 @@ function BacktestConfig({ onRun }: { onRun: () => void }) {
 
     try {
       await api.runBacktest({
-        name: name || `${selectedStrategy?.name || 'Backtest'} - ${new Date().toISOString().split('T')[0]}`,
+        name: `${selectedStrategy?.name || "Backtest"} - ${symbol}`,
         symbol,
         startDate,
         endDate,
         initialCapital,
         strategyId: selectedStrategyId,
       });
-      
-      mutate('backtest-list');
+
+      mutate("backtest-list");
       onRun();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to run backtest');
+      setError(e instanceof Error ? e.message : "Failed to run backtest");
     } finally {
       setIsRunning(false);
     }
   };
 
-  // Group strategies by category for display
-  const strategyGroups = strategies?.reduce((acc, s) => {
-    if (!acc[s.category]) acc[s.category] = [];
-    acc[s.category].push(s);
-    return acc;
-  }, {} as Record<string, StrategyConfig[]>);
-
-  // Featured strategies (shown by default)
-  const featuredIds = ['hodl', 'dca', 'fear-greed-moderate', 'fear-greed-aggressive'];
-  const featuredStrategies = strategies?.filter(s => featuredIds.includes(s.id));
-
   return (
-    <div className="bg-midnight-900/30 rounded-2xl border border-midnight-800 p-6">
-      <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
-        <BarChart3 className="w-5 h-5 text-indigo-400" />
-        New Backtest
-      </h3>
-
-      {/* Basic Configuration */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-        {/* Name */}
-        <div>
-          <label className="block text-sm text-midnight-400 mb-2">Name (optional)</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="My Backtest"
-            className="w-full bg-midnight-900 border border-midnight-700 rounded-lg px-3 py-2 text-white placeholder-midnight-500 focus:outline-none focus:border-indigo-500"
-          />
-        </div>
-
-        {/* Symbol */}
-        <div>
-          <label className="block text-sm text-midnight-400 mb-2">Symbol</label>
-          <select
-            value={symbol}
-            onChange={(e) => setSymbol(e.target.value)}
-            className="w-full bg-midnight-900 border border-midnight-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-          >
-            <option value="BTC/USDT">BTC/USDT</option>
-            <option value="ETH/USDT">ETH/USDT</option>
-            <option value="SOL/USDT">SOL/USDT</option>
-          </select>
-        </div>
-
-        {/* Start Date */}
-        <div>
-          <label className="block text-sm text-midnight-400 mb-2">Start Date</label>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-full bg-midnight-900 border border-midnight-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-          />
-        </div>
-
-        {/* End Date */}
-        <div>
-          <label className="block text-sm text-midnight-400 mb-2">End Date</label>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="w-full bg-midnight-900 border border-midnight-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-          />
-        </div>
-
-        {/* Initial Capital */}
-        <div>
-          <label className="block text-sm text-midnight-400 mb-2">Capital (USDT)</label>
-          <input
-            type="number"
-            value={initialCapital}
-            onChange={(e) => setInitialCapital(Number(e.target.value))}
-            min={100}
-            className="w-full bg-midnight-900 border border-midnight-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-          />
-        </div>
+    <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-lg">
+      <div className="p-6 border-b border-gray-200 bg-gray-50 rounded-t-2xl">
+        <h2 className="text-xl font-bold text-gray-900">New Backtest</h2>
+        <p className="text-sm text-gray-600 mt-1">
+          Test a strategy against historical data
+        </p>
       </div>
 
-      {/* Strategy Selection */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <label className="text-sm text-midnight-400 flex items-center gap-2">
-            <Info className="w-4 h-4" />
-            Select Strategy
-          </label>
-          <button
-            onClick={() => setShowAllStrategies(!showAllStrategies)}
-            className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
-          >
-            {showAllStrategies ? (
-              <>
-                <ChevronUp className="w-4 h-4" />
-                Show Less
-              </>
-            ) : (
-              <>
-                <ChevronDown className="w-4 h-4" />
-                Show All ({strategies?.length || 0})
-              </>
-            )}
-          </button>
+      <div className="p-6 space-y-6">
+        {/* Configuration Row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Asset
+            </label>
+            <select
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg border-2 border-gray-300 bg-white text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 font-medium"
+            >
+              <option value="BTC/USDT">Bitcoin</option>
+              <option value="ETH/USDT">Ethereum</option>
+              <option value="SOL/USDT">Solana</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Start
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg border-2 border-gray-300 bg-white text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              End
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg border-2 border-gray-300 bg-white text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Capital
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-medium">
+                $
+              </span>
+              <input
+                type="number"
+                value={initialCapital}
+                onChange={(e) => setInitialCapital(Number(e.target.value))}
+                min={100}
+                className="w-full pl-7 pr-3 py-2.5 rounded-lg border-2 border-gray-300 bg-white text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 font-medium"
+              />
+            </div>
+          </div>
         </div>
 
-        {showAllStrategies ? (
-          // Show all strategies grouped by category
-          <div className="space-y-4">
-            {strategyGroups && Object.entries(strategyGroups).map(([category, strats]) => (
-              <div key={category}>
-                <h4 className="text-xs uppercase tracking-wider text-midnight-500 mb-2">
-                  {CATEGORY_ICONS[category]} {category}
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {strats.map(s => (
-                    <StrategyCard
-                      key={s.id}
-                      strategy={s}
-                      isSelected={selectedStrategyId === s.id}
-                      onSelect={() => setSelectedStrategyId(s.id)}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          // Show featured strategies
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {featuredStrategies?.map(s => (
-              <StrategyCard
+        {/* Strategy Selection */}
+        <div>
+          <label className="block text-base font-semibold text-gray-800 mb-3">
+            Select Strategy
+          </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {strategies?.map((s) => (
+              <StrategyOption
                 key={s.id}
                 strategy={s}
                 isSelected={selectedStrategyId === s.id}
@@ -366,79 +292,22 @@ function BacktestConfig({ onRun }: { onRun: () => void }) {
               />
             ))}
           </div>
-        )}
-      </div>
-
-      {/* Selected Strategy Info */}
-      {selectedStrategy && (
-        <div className="mb-6 p-4 rounded-xl bg-midnight-900/50 border border-midnight-700">
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-xl">{CATEGORY_ICONS[selectedStrategy.category]}</span>
-            <div>
-              <h4 className="font-semibold text-white">{selectedStrategy.name}</h4>
-              <span className={`text-xs px-2 py-0.5 rounded-full border ${CATEGORY_COLORS[selectedStrategy.category]}`}>
-                {selectedStrategy.category}
-              </span>
-            </div>
-          </div>
-          <p className="text-sm text-midnight-400">{selectedStrategy.description}</p>
-          
-          {/* Show key params */}
-          <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-            {selectedStrategy.params.maxPositionPercent !== undefined && (
-              <div>
-                <span className="text-midnight-500">Max Position:</span>
-                <span className="ml-1 text-white">{selectedStrategy.params.maxPositionPercent}%</span>
-              </div>
-            )}
-            {selectedStrategy.params.minPositionPercent !== undefined && (
-              <div>
-                <span className="text-midnight-500">Min Position:</span>
-                <span className="ml-1 text-white">{selectedStrategy.params.minPositionPercent}%</span>
-              </div>
-            )}
-            {selectedStrategy.params.minProfitToSell !== undefined && (
-              <div>
-                <span className="text-midnight-500">Min Profit:</span>
-                <span className="ml-1 text-white">{selectedStrategy.params.minProfitToSell}%</span>
-              </div>
-            )}
-            {selectedStrategy.params.sellAmountPercent !== undefined && (
-              <div>
-                <span className="text-midnight-500">Sell Amount:</span>
-                <span className="ml-1 text-white">{selectedStrategy.params.sellAmountPercent}%</span>
-              </div>
-            )}
-          </div>
         </div>
-      )}
 
-      {/* Run Button */}
-      <div className="flex items-center gap-4">
-        <button
-          onClick={handleRun}
-          disabled={isRunning || !startDate || !endDate || !selectedStrategyId}
-          className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-midnight-700 disabled:cursor-not-allowed text-white font-medium rounded-lg px-6 py-3 transition-colors"
-        >
-          {isRunning ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Running Backtest...
-            </>
-          ) : (
-            <>
-              <Play className="w-4 h-4" />
-              Run Backtest
-            </>
-          )}
-        </button>
-        
-        {error && (
-          <div className="flex items-center gap-2 text-red-400 text-sm">
-            <AlertCircle className="w-4 h-4" />
-            {error}
-          </div>
-        )}
+        {/* Run Button */}
+        <div className="flex items-center gap-4 pt-4">
+          <button
+            onClick={handleRun}
+            disabled={
+              isRunning || !startDate || !endDate || !selectedStrategyId
+            }
+            className="px-8 py-3 rounded-lg bg-blue-600 text-white font-semibold text-base hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors shadow-md"
+          >
+            {isRunning ? "Running..." : "Run Backtest"}
+          </button>
+
+          {error && <p className="text-sm text-red-600 font-medium">{error}</p>}
+        </div>
       </div>
     </div>
   );
@@ -449,96 +318,121 @@ function BacktestConfig({ onRun }: { onRun: () => void }) {
 // ============================================================================
 
 function BacktestList({ onSelect }: { onSelect: (id: string) => void }) {
-  const { data: backtests, isLoading } = useSWR('backtest-list', () => api.listBacktests(20));
+  const { data: backtests, isLoading } = useSWR("backtest-list", () =>
+    api.listBacktests(20)
+  );
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-midnight-400" />
+      <div className="flex items-center justify-center py-16">
+        <div className="w-6 h-6 border-2 border-surface-300 border-t-surface-600 rounded-full animate-spin" />
       </div>
     );
   }
 
   if (!backtests || backtests.length === 0) {
     return (
-      <div className="text-center py-12 text-midnight-400">
-        No backtests yet. Run your first backtest above!
+      <div className="text-center py-16 text-surface-400">
+        No backtests yet. Run one above to get started.
       </div>
     );
   }
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (confirm('Delete this backtest?')) {
+    if (confirm("Delete this backtest?")) {
       await api.deleteBacktest(id);
-      mutate('backtest-list');
+      mutate("backtest-list");
     }
   };
 
   return (
-    <div className="space-y-3">
+    <div className="divide-y divide-surface-100">
       {backtests.map((bt) => (
         <div
           key={bt.id}
-          onClick={() => bt.status === 'completed' && onSelect(bt.id)}
-          className={`bg-midnight-900/30 rounded-xl border border-midnight-800 p-4 transition-all ${
-            bt.status === 'completed' ? 'cursor-pointer hover:border-indigo-500/50 hover:bg-midnight-900/50' : 'opacity-60'
+          onClick={() => bt.status === "completed" && onSelect(bt.id)}
+          className={`px-6 py-4 flex items-center justify-between transition-colors ${
+            bt.status === "completed"
+              ? "cursor-pointer hover:bg-surface-50"
+              : "opacity-50"
           }`}
         >
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3">
-              {bt.status === 'completed' && <CheckCircle className="w-5 h-5 text-volt-400" />}
-              {bt.status === 'running' && <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />}
-              {bt.status === 'failed' && <AlertCircle className="w-5 h-5 text-red-400" />}
-              {bt.status === 'pending' && <Clock className="w-5 h-5 text-midnight-400" />}
-              <div>
-                <h4 className="font-medium">{bt.name}</h4>
-                <div className="text-sm text-midnight-400">
-                  {bt.symbol} • {formatDate(bt.startDate)} → {formatDate(bt.endDate)}
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              {bt.status === 'completed' && bt.totalReturn !== null && (
-                <div className={`text-lg font-bold ${bt.totalReturn >= 0 ? 'text-volt-400' : 'text-red-400'}`}>
-                  {formatPercent(bt.totalReturn)}
-                </div>
+              <h4 className="font-medium text-surface-900 truncate">
+                {bt.name}
+              </h4>
+              {bt.status === "running" && (
+                <span className="text-xs text-surface-500">{bt.progress}%</span>
               )}
-              {bt.status === 'running' && (
-                <div className="text-sm text-midnight-400">{bt.progress}%</div>
+              {bt.status === "failed" && (
+                <span className="text-xs text-danger">Failed</span>
               )}
-              <button
-                onClick={(e) => handleDelete(e, bt.id)}
-                className="p-2 text-midnight-500 hover:text-red-400 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
             </div>
+            <p className="text-sm text-surface-500 mt-0.5">
+              {bt.symbol} · {formatDate(bt.startDate)} →{" "}
+              {formatDate(bt.endDate)}
+            </p>
           </div>
 
-          {bt.status === 'completed' && (
-            <div className="grid grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-midnight-500">Win Rate</span>
-                <span className="ml-2 text-white">{formatNumber(bt.winRate, 1)}%</span>
-              </div>
-              <div>
-                <span className="text-midnight-500">Max DD</span>
-                <span className="ml-2 text-red-400">-{formatNumber(bt.maxDrawdown, 1)}%</span>
-              </div>
-              <div>
-                <span className="text-midnight-500">Trades</span>
-                <span className="ml-2 text-white">{bt.totalTrades}</span>
-              </div>
-              <div>
-                <span className="text-midnight-500">vs HODL</span>
-                <span className={`ml-2 ${(bt.outperformance || 0) >= 0 ? 'text-volt-400' : 'text-red-400'}`}>
-                  {formatPercent(bt.outperformance)}
-                </span>
-              </div>
-            </div>
-          )}
+          <div className="flex items-center gap-6">
+            {bt.status === "completed" && (
+              <>
+                <div className="text-right">
+                  <div
+                    className={`text-lg font-semibold tabular-nums ${
+                      (bt.totalReturn || 0) >= 0
+                        ? "text-success"
+                        : "text-danger"
+                    }`}
+                  >
+                    {formatPercent(bt.totalReturn)}
+                  </div>
+                  <div className="text-xs text-surface-400">
+                    vs HODL:{" "}
+                    <span
+                      className={
+                        (bt.outperformance || 0) >= 0
+                          ? "text-success"
+                          : "text-danger"
+                      }
+                    >
+                      {formatPercent(bt.outperformance)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-right hidden md:block">
+                  <div className="text-sm text-surface-600">
+                    {bt.totalTrades} trades
+                  </div>
+                  <div className="text-xs text-surface-400">
+                    {formatNumber(bt.winRate, 0)}% win rate
+                  </div>
+                </div>
+              </>
+            )}
+
+            <button
+              onClick={(e) => handleDelete(e, bt.id)}
+              className="p-2 text-surface-300 hover:text-danger transition-colors"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
       ))}
     </div>
@@ -550,217 +444,272 @@ function BacktestList({ onSelect }: { onSelect: (id: string) => void }) {
 // ============================================================================
 
 function BacktestDetail({ id, onBack }: { id: string; onBack: () => void }) {
-  const { data, isLoading, error } = useSWR(`backtest-${id}`, () => api.getBacktest(id));
+  const { data, isLoading, error } = useSWR(`backtest-${id}`, () =>
+    api.getBacktest(id)
+  );
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-midnight-400" />
+      <div className="flex items-center justify-center py-16">
+        <div className="w-6 h-6 border-2 border-surface-300 border-t-surface-600 rounded-full animate-spin" />
       </div>
     );
   }
 
   if (error || !data) {
     return (
-      <div className="text-center py-12 text-red-400">
+      <div className="text-center py-16 text-danger">
         Failed to load backtest
       </div>
     );
   }
 
   const { backtest, trades, snapshots } = data;
-  const buys = trades.filter(t => t.action === 'buy');
-  const sells = trades.filter(t => t.action === 'sell');
+  const buys = trades.filter((t) => t.action === "buy");
+  const sells = trades.filter((t) => t.action === "sell");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <div>
           <button
             onClick={onBack}
-            className="text-sm text-midnight-400 hover:text-white mb-2 flex items-center gap-1"
+            className="text-sm text-surface-500 hover:text-surface-700 mb-2 flex items-center gap-1"
           >
-            ← Back to list
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+            Back
           </button>
-          <h2 className="text-xl font-bold">{backtest.name}</h2>
-          <div className="text-midnight-400">
-            {backtest.symbol} • {formatDate(backtest.startDate)} → {formatDate(backtest.endDate)}
-          </div>
+          <h1 className="text-2xl font-semibold text-surface-900">
+            {backtest.name}
+          </h1>
+          <p className="text-surface-500 mt-1">
+            {backtest.symbol} · {formatDate(backtest.startDate)} →{" "}
+            {formatDate(backtest.endDate)}
+          </p>
         </div>
-        <div className={`text-3xl font-bold ${(backtest.totalReturn || 0) >= 0 ? 'text-volt-400' : 'text-red-400'}`}>
-          {formatPercent(backtest.totalReturn)}
+
+        <div className="text-right">
+          <div
+            className={`text-3xl font-bold tabular-nums ${
+              (backtest.totalReturn || 0) >= 0 ? "text-success" : "text-danger"
+            }`}
+          >
+            {formatPercent(backtest.totalReturn)}
+          </div>
+          <div className="text-sm text-surface-500">
+            {formatUsd(backtest.finalCapital)}
+          </div>
         </div>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <MetricCard
-          label="Initial Capital"
-          value={`$${backtest.initialCapital.toLocaleString()}`}
-          icon={DollarSign}
-        />
-        <MetricCard
-          label="Final Capital"
-          value={`$${formatNumber(backtest.finalCapital, 0)}`}
-          subValue={formatUsd(backtest.totalReturnUsdt)}
-          icon={DollarSign}
-          trend={(backtest.totalReturnUsdt || 0) >= 0 ? 'up' : 'down'}
-        />
-        <MetricCard
-          label="Win Rate"
-          value={`${formatNumber(backtest.winRate, 1)}%`}
-          subValue={`${backtest.profitableTrades}/${sells.length} trades`}
-          icon={Target}
-          trend={(backtest.winRate || 0) >= 50 ? 'up' : 'down'}
-        />
-        <MetricCard
-          label="Max Drawdown"
-          value={`-${formatNumber(backtest.maxDrawdown, 1)}%`}
-          icon={TrendingDown}
-          trend="down"
-        />
-        <MetricCard
-          label="Sharpe Ratio"
-          value={formatNumber(backtest.sharpeRatio, 2)}
-          icon={BarChart3}
-          trend={(backtest.sharpeRatio || 0) >= 1 ? 'up' : (backtest.sharpeRatio || 0) < 0 ? 'down' : 'neutral'}
-        />
-        <MetricCard
-          label="vs Buy & Hold"
-          value={formatPercent(backtest.outperformance)}
-          subValue={`HODL: ${formatPercent(backtest.buyAndHoldReturn)}`}
-          icon={(backtest.outperformance || 0) >= 0 ? ArrowUpRight : ArrowDownRight}
-          trend={(backtest.outperformance || 0) >= 0 ? 'up' : 'down'}
-        />
+      {/* Metrics Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-surface-200 p-4">
+          <div className="text-sm text-surface-500">Initial</div>
+          <div className="text-xl font-semibold text-surface-900 mt-1">
+            {formatUsd(backtest.initialCapital)}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-surface-200 p-4">
+          <div className="text-sm text-surface-500">Final</div>
+          <div className="text-xl font-semibold text-surface-900 mt-1">
+            {formatUsd(backtest.finalCapital)}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-surface-200 p-4">
+          <div className="text-sm text-surface-500">Max Drawdown</div>
+          <div className="text-xl font-semibold text-danger mt-1">
+            -{formatNumber(backtest.maxDrawdown, 1)}%
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-surface-200 p-4">
+          <div className="text-sm text-surface-500">vs Buy & Hold</div>
+          <div
+            className={`text-xl font-semibold mt-1 ${
+              (backtest.outperformance || 0) >= 0
+                ? "text-success"
+                : "text-danger"
+            }`}
+          >
+            {formatPercent(backtest.outperformance)}
+          </div>
+        </div>
       </div>
 
       {/* Equity Curve */}
-      <div className="bg-midnight-900/30 rounded-2xl border border-midnight-800 p-6">
-        <h3 className="text-lg font-semibold mb-4">Equity Curve</h3>
-        <div className="h-48">
-          <MiniChart
-            data={snapshots.map(s => ({ timestamp: s.timestamp, value: s.portfolioValue }))}
-            height={192}
-          />
-        </div>
-        <div className="flex justify-between text-sm text-midnight-400 mt-2">
+      <div className="bg-white rounded-xl border border-surface-200 p-6">
+        <h3 className="text-sm font-medium text-surface-700 mb-4">
+          Portfolio Value
+        </h3>
+        <MiniChart
+          data={snapshots.map((s) => ({
+            timestamp: s.timestamp,
+            value: s.portfolioValue,
+          }))}
+          height={160}
+        />
+        <div className="flex justify-between text-xs text-surface-400 mt-2">
           <span>{formatDate(backtest.startDate)}</span>
           <span>{formatDate(backtest.endDate)}</span>
         </div>
       </div>
 
-      {/* Trade Statistics */}
+      {/* Trade Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Trade Summary */}
-        <div className="bg-midnight-900/30 rounded-2xl border border-midnight-800 p-6">
-          <h3 className="text-lg font-semibold mb-4">Trade Summary</h3>
+        <div className="bg-white rounded-xl border border-surface-200 p-6">
+          <h3 className="text-sm font-medium text-surface-700 mb-4">
+            Trade Statistics
+          </h3>
           <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-midnight-400">Total Trades</span>
+            <div className="flex justify-between text-sm">
+              <span className="text-surface-500">Total Trades</span>
               <span className="font-medium">{backtest.totalTrades}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-midnight-400">Buy Orders</span>
-              <span className="text-volt-400">{buys.length}</span>
+            <div className="flex justify-between text-sm">
+              <span className="text-surface-500">Buy Orders</span>
+              <span className="font-medium text-success">{buys.length}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-midnight-400">Sell Orders</span>
-              <span className="text-amber-400">{sells.length}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-midnight-400">Avg Trade Return</span>
-              <span className={`${(backtest.avgTradeReturn || 0) >= 0 ? 'text-volt-400' : 'text-red-400'}`}>
-                {formatPercent(backtest.avgTradeReturn)}
+            <div className="flex justify-between text-sm">
+              <span className="text-surface-500">Sell Orders</span>
+              <span className="font-medium text-warning-dark">
+                {sells.length}
               </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-midnight-400">Avg Win Size</span>
-              <span className="text-volt-400">${formatNumber(backtest.avgWinSize, 2)}</span>
+            <div className="flex justify-between text-sm">
+              <span className="text-surface-500">Win Rate</span>
+              <span className="font-medium">
+                {formatNumber(backtest.winRate, 1)}%
+              </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-midnight-400">Avg Loss Size</span>
-              <span className="text-red-400">-${formatNumber(backtest.avgLossSize, 2)}</span>
+            <div className="flex justify-between text-sm">
+              <span className="text-surface-500">Sharpe Ratio</span>
+              <span className="font-medium">
+                {formatNumber(backtest.sharpeRatio, 2)}
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Strategy Parameters */}
-        <div className="bg-midnight-900/30 rounded-2xl border border-midnight-800 p-6">
-          <h3 className="text-lg font-semibold mb-4">Strategy Parameters</h3>
-          <div className="space-y-3 text-sm">
+        <div className="bg-white rounded-xl border border-surface-200 p-6">
+          <h3 className="text-sm font-medium text-surface-700 mb-4">
+            Strategy
+          </h3>
+          <div className="space-y-3">
             {backtest.riskProfile && (
-              <div className="flex justify-between">
-                <span className="text-midnight-400">Category</span>
-                <span className={`px-2 py-0.5 rounded-full text-xs ${CATEGORY_COLORS[backtest.riskProfile] || 'bg-midnight-700 text-white'}`}>
-                  {CATEGORY_ICONS[backtest.riskProfile] || ''} {backtest.riskProfile}
+              <div className="flex justify-between text-sm">
+                <span className="text-surface-500">Type</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs ${
+                    CATEGORY_STYLES[backtest.riskProfile] ||
+                    "bg-surface-100 text-surface-600"
+                  }`}
+                >
+                  {backtest.riskProfile}
                 </span>
               </div>
             )}
-            {Object.entries(backtest.strategyParams || {}).map(([key, value]) => (
-              <div key={key} className="flex justify-between">
-                <span className="text-midnight-400">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                <span>{typeof value === 'number' ? (key.includes('Percent') ? `${value}%` : value) : String(value)}</span>
-              </div>
-            ))}
+            {Object.entries(backtest.strategyParams || {})
+              .slice(0, 6)
+              .map(([key, value]) => (
+                <div key={key} className="flex justify-between text-sm">
+                  <span className="text-surface-500">
+                    {key.replace(/([A-Z])/g, " $1").trim()}
+                  </span>
+                  <span className="font-mono text-xs">
+                    {typeof value === "number"
+                      ? key.toLowerCase().includes("percent")
+                        ? `${value}%`
+                        : value
+                      : String(value)}
+                  </span>
+                </div>
+              ))}
           </div>
         </div>
       </div>
 
       {/* Trade History */}
-      <div className="bg-midnight-900/30 rounded-2xl border border-midnight-800 p-6">
-        <h3 className="text-lg font-semibold mb-4">Trade History</h3>
+      <div className="bg-white rounded-xl border border-surface-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-surface-100">
+          <h3 className="text-sm font-medium text-surface-700">
+            Trade History
+          </h3>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-midnight-400 border-b border-midnight-800">
-                <th className="text-left py-2 px-3">Date</th>
-                <th className="text-left py-2 px-3">Action</th>
-                <th className="text-right py-2 px-3">Price</th>
-                <th className="text-right py-2 px-3">Amount</th>
-                <th className="text-right py-2 px-3">Value</th>
-                <th className="text-right py-2 px-3">P&L</th>
-                <th className="text-left py-2 px-3">Regime</th>
+              <tr className="bg-surface-50 text-surface-500 text-xs uppercase tracking-wider">
+                <th className="text-left py-3 px-6 font-medium">Date</th>
+                <th className="text-left py-3 px-6 font-medium">Action</th>
+                <th className="text-right py-3 px-6 font-medium">Price</th>
+                <th className="text-right py-3 px-6 font-medium">Amount</th>
+                <th className="text-right py-3 px-6 font-medium">Value</th>
+                <th className="text-right py-3 px-6 font-medium">P&L</th>
               </tr>
             </thead>
-            <tbody>
-              {trades.slice(0, 50).map((trade) => (
-                <tr key={trade.id} className="border-b border-midnight-800/50 hover:bg-midnight-800/30">
-                  <td className="py-2 px-3 text-midnight-400">
-                    {new Date(trade.timestamp).toLocaleDateString()}
+            <tbody className="divide-y divide-surface-100">
+              {trades.slice(0, 30).map((trade) => (
+                <tr key={trade.id} className="hover:bg-surface-50">
+                  <td className="py-3 px-6 text-surface-600">
+                    {formatDate(trade.timestamp)}
                   </td>
-                  <td className="py-2 px-3">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      trade.action === 'buy' ? 'bg-volt-400/20 text-volt-400' : 'bg-amber-400/20 text-amber-400'
-                    }`}>
-                      {trade.action.toUpperCase()}
+                  <td className="py-3 px-6">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                        trade.action === "buy"
+                          ? "bg-success/10 text-success"
+                          : "bg-warning/10 text-warning-dark"
+                      }`}
+                    >
+                      {trade.action}
                     </span>
                   </td>
-                  <td className="py-2 px-3 text-right">${formatNumber(trade.price, 2)}</td>
-                  <td className="py-2 px-3 text-right">{formatNumber(trade.amount, 6)}</td>
-                  <td className="py-2 px-3 text-right">${formatNumber(trade.valueUsdt, 2)}</td>
-                  <td className="py-2 px-3 text-right">
-                    {trade.action === 'sell' && trade.profitUsdt !== null ? (
-                      <span className={trade.profitUsdt >= 0 ? 'text-volt-400' : 'text-red-400'}>
-                        {formatUsd(trade.profitUsdt)}
+                  <td className="py-3 px-6 text-right font-mono">
+                    ${formatNumber(trade.price, 0)}
+                  </td>
+                  <td className="py-3 px-6 text-right font-mono text-surface-500">
+                    {formatNumber(trade.amount, 6)}
+                  </td>
+                  <td className="py-3 px-6 text-right font-mono">
+                    ${formatNumber(trade.valueUsdt, 2)}
+                  </td>
+                  <td className="py-3 px-6 text-right font-mono">
+                    {trade.action === "sell" && trade.profitUsdt !== null ? (
+                      <span
+                        className={
+                          trade.profitUsdt >= 0 ? "text-success" : "text-danger"
+                        }
+                      >
+                        {trade.profitUsdt >= 0 ? "+" : ""}$
+                        {formatNumber(trade.profitUsdt, 2)}
                       </span>
-                    ) : '-'}
-                  </td>
-                  <td className="py-2 px-3">
-                    <span className={`text-xs ${
-                      trade.regime?.includes('fear') ? 'text-volt-400' :
-                      trade.regime?.includes('greed') ? 'text-amber-400' : 'text-midnight-400'
-                    }`}>
-                      {trade.regime?.replace('_', ' ') || '-'}
-                    </span>
+                    ) : (
+                      <span className="text-surface-300">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {trades.length > 50 && (
-            <div className="text-center text-midnight-400 text-sm py-4">
-              Showing first 50 of {trades.length} trades
+          {trades.length > 30 && (
+            <div className="text-center text-surface-400 text-sm py-4 border-t border-surface-100">
+              Showing 30 of {trades.length} trades
             </div>
           )}
         </div>
@@ -777,23 +726,20 @@ export function BacktestPanel() {
   const [selectedBacktest, setSelectedBacktest] = useState<string | null>(null);
 
   return (
-    <div className="space-y-8">
+    <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
       {selectedBacktest ? (
-        <BacktestDetail 
-          id={selectedBacktest} 
-          onBack={() => setSelectedBacktest(null)} 
+        <BacktestDetail
+          id={selectedBacktest}
+          onBack={() => setSelectedBacktest(null)}
         />
       ) : (
         <>
-          {/* Configuration */}
           <BacktestConfig onRun={() => {}} />
 
-          {/* Past Backtests */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-midnight-400" />
-              Past Backtests
-            </h3>
+          <div className="bg-white rounded-2xl border border-surface-200 shadow-card overflow-hidden">
+            <div className="px-6 py-4 border-b border-surface-100">
+              <h2 className="font-semibold text-surface-900">Past Backtests</h2>
+            </div>
             <BacktestList onSelect={setSelectedBacktest} />
           </div>
         </>

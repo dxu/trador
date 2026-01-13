@@ -1,155 +1,86 @@
-import { useState } from 'react';
-import useSWR from 'swr';
-import { format } from 'date-fns';
-import { api } from '../api';
-import type { Transaction, Strategy, RiskProfile } from '../types';
-import { 
-  Activity, 
-  TrendingUp, 
-  TrendingDown, 
-  DollarSign,
-  Target,
-  Percent,
-  Turtle,
-  Scale,
-  Rocket,
-} from 'lucide-react';
+import { useState } from "react";
+import useSWR from "swr";
+import { format } from "date-fns";
+import { api } from "../api";
+import type { Transaction, RiskProfile } from "../types";
 
-type FilterAction = 'all' | 'buy' | 'sell';
+type FilterAction = "all" | "buy" | "sell";
 
-const RISK_COLORS: Record<RiskProfile, string> = {
-  conservative: 'bg-blue-500/20 text-blue-400',
-  moderate: 'bg-indigo-500/20 text-indigo-400',
-  aggressive: 'bg-orange-500/20 text-orange-400',
+const RISK_STYLES: Record<RiskProfile, string> = {
+  conservative: "bg-blue-50 text-blue-700",
+  moderate: "bg-purple-50 text-purple-700",
+  aggressive: "bg-orange-50 text-orange-700",
 };
 
 export function TransactionsPanel() {
-  const [actionFilter, setActionFilter] = useState<FilterAction>('all');
-  
+  const [actionFilter, setActionFilter] = useState<FilterAction>("all");
+
   const { data: transactions, isLoading } = useSWR(
-    ['transactions', actionFilter],
-    () => api.getTransactions({ 
-      limit: 100, 
-      action: actionFilter === 'all' ? undefined : actionFilter 
-    }),
+    ["transactions", actionFilter],
+    () =>
+      api.getTransactions({
+        limit: 100,
+        action: actionFilter === "all" ? undefined : actionFilter,
+      }),
     { refreshInterval: 30000 }
   );
-  
-  const { data: stats } = useSWR('transaction-stats', api.getTransactionStats, {
+
+  const { data: stats } = useSWR("transaction-stats", api.getTransactionStats, {
     refreshInterval: 60000,
   });
 
   const filters: { id: FilterAction; label: string }[] = [
-    { id: 'all', label: 'All' },
-    { id: 'buy', label: 'Buys' },
-    { id: 'sell', label: 'Sells' },
+    { id: "all", label: "All" },
+    { id: "buy", label: "Buys" },
+    { id: "sell", label: "Sells" },
   ];
 
   return (
-    <div className="space-y-6 animate-stagger">
-      {/* Stats Summary */}
+    <div className="space-y-6">
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card p-4">
-          <div className="flex items-center gap-2 text-midnight-400 mb-2">
-            <DollarSign className="w-4 h-4" />
-            <span className="text-sm">Total Invested</span>
-          </div>
-          <p className="text-2xl font-mono font-bold">${(stats?.totalInvested || 0).toFixed(2)}</p>
-          <p className="text-xs text-midnight-500 mt-1">{stats?.totalBuys || 0} buy orders</p>
-        </div>
-        
-        <div className="card p-4">
-          <div className="flex items-center gap-2 text-midnight-400 mb-2">
-            <Target className="w-4 h-4" />
-            <span className="text-sm">Realized Profit</span>
-          </div>
-          <p className={`text-2xl font-mono font-bold ${(stats?.realizedProfit || 0) >= 0 ? 'text-volt-400' : 'text-red-400'}`}>
-            {(stats?.realizedProfit || 0) >= 0 ? '+' : ''}${(stats?.realizedProfit || 0).toFixed(2)}
-          </p>
-          <p className="text-xs text-midnight-500 mt-1">{stats?.totalSells || 0} sell orders</p>
-        </div>
-        
-        <div className="card p-4">
-          <div className="flex items-center gap-2 text-midnight-400 mb-2">
-            <Percent className="w-4 h-4" />
-            <span className="text-sm">Win Rate</span>
-          </div>
-          <p className="text-2xl font-mono font-bold text-indigo-400">
-            {(stats?.winRate || 0).toFixed(1)}%
-          </p>
-          <p className="text-xs text-midnight-500 mt-1">Profitable sells</p>
-        </div>
-        
-        <div className="card p-4">
-          <div className="flex items-center gap-2 text-midnight-400 mb-2">
-            <Activity className="w-4 h-4" />
-            <span className="text-sm">Total Fees</span>
-          </div>
-          <p className="text-2xl font-mono font-bold text-midnight-300">
-            ${(stats?.totalFees || 0).toFixed(2)}
-          </p>
-          <p className="text-xs text-midnight-500 mt-1">Exchange fees paid</p>
-        </div>
-      </div>
-
-      {/* Avg Trade Sizes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="card p-5">
-          <h3 className="text-sm font-medium text-midnight-400 mb-3">Average Trade Sizes</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-midnight-300 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-volt-400" />
-                Avg Buy
-              </span>
-              <span className="font-mono text-volt-400">${(stats?.avgBuySize || 0).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-midnight-300 flex items-center gap-2">
-                <TrendingDown className="w-4 h-4 text-red-400" />
-                Avg Sell
-              </span>
-              <span className="font-mono">${(stats?.avgSellSize || 0).toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-        
-        <div className="card p-5">
-          <h3 className="text-sm font-medium text-midnight-400 mb-3">Net Flow</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-midnight-300">Invested</span>
-              <span className="font-mono text-red-400">-${(stats?.totalInvested || 0).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-midnight-300">Withdrawn</span>
-              <span className="font-mono text-volt-400">+${(stats?.totalSold || 0).toFixed(2)}</span>
-            </div>
-            <div className="border-t border-midnight-700 pt-2 flex justify-between items-center">
-              <span className="text-white font-medium">Net</span>
-              <span className={`font-mono font-bold ${((stats?.totalSold || 0) - (stats?.totalInvested || 0)) >= 0 ? 'text-volt-400' : 'text-red-400'}`}>
-                {((stats?.totalSold || 0) - (stats?.totalInvested || 0)) >= 0 ? '+' : ''}${((stats?.totalSold || 0) - (stats?.totalInvested || 0)).toFixed(2)}
-              </span>
-            </div>
-          </div>
-        </div>
+        <StatCard
+          label="Total Invested"
+          value={`$${(stats?.totalInvested || 0).toFixed(2)}`}
+          subtitle={`${stats?.totalBuys || 0} buys`}
+        />
+        <StatCard
+          label="Realized Profit"
+          value={`${(stats?.realizedProfit || 0) >= 0 ? "+" : ""}$${(
+            stats?.realizedProfit || 0
+          ).toFixed(2)}`}
+          subtitle={`${stats?.totalSells || 0} sells`}
+          positive={(stats?.realizedProfit || 0) >= 0}
+        />
+        <StatCard
+          label="Win Rate"
+          value={`${(stats?.winRate || 0).toFixed(1)}%`}
+          subtitle="Profitable sells"
+        />
+        <StatCard
+          label="Total Fees"
+          value={`$${(stats?.totalFees || 0).toFixed(2)}`}
+          subtitle="Exchange fees"
+        />
       </div>
 
       {/* Transactions Table */}
-      <div className="card">
-        <div className="p-4 border-b border-midnight-800 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Transaction History</h2>
-          
-          {/* Filter Tabs */}
-          <div className="flex items-center gap-1 bg-midnight-900/50 rounded-lg p-1">
+      <div className="bg-white rounded-xl border border-surface-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-surface-100 flex items-center justify-between">
+          <h2 className="font-semibold text-surface-900">
+            Transaction History
+          </h2>
+
+          {/* Filters */}
+          <div className="flex items-center gap-1 bg-surface-100 rounded-lg p-1">
             {filters.map((filter) => (
               <button
                 key={filter.id}
                 onClick={() => setActionFilter(filter.id)}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   actionFilter === filter.id
-                    ? 'bg-indigo-500 text-white'
-                    : 'text-midnight-400 hover:text-white'
+                    ? "bg-white text-surface-900 shadow-sm"
+                    : "text-surface-500 hover:text-surface-700"
                 }`}
               >
                 {filter.label}
@@ -160,32 +91,29 @@ export function TransactionsPanel() {
 
         <div className="overflow-x-auto">
           {isLoading ? (
-            <div className="p-8 text-center text-midnight-400">Loading transactions...</div>
+            <div className="py-12 text-center text-surface-400">Loading...</div>
           ) : transactions && transactions.length > 0 ? (
-            <table className="data-table">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="text-left">
-                  <th className="pl-4">Date</th>
-                  <th>Action</th>
-                  <th>Amount</th>
-                  <th>Price</th>
-                  <th>Value</th>
-                  <th>Fee</th>
-                  <th>Profit</th>
-                  <th>Regime</th>
-                  <th className="pr-4">Reason</th>
+                <tr className="bg-surface-50 text-surface-500 text-xs uppercase tracking-wider">
+                  <th className="text-left py-3 px-6 font-medium">Date</th>
+                  <th className="text-left py-3 px-6 font-medium">Action</th>
+                  <th className="text-right py-3 px-6 font-medium">Amount</th>
+                  <th className="text-right py-3 px-6 font-medium">Price</th>
+                  <th className="text-right py-3 px-6 font-medium">Value</th>
+                  <th className="text-right py-3 px-6 font-medium">Profit</th>
+                  <th className="text-left py-3 px-6 font-medium">Regime</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-surface-100">
                 {transactions.map((tx) => (
                   <TransactionRow key={tx.id} transaction={tx} />
                 ))}
               </tbody>
             </table>
           ) : (
-            <div className="p-8 text-center text-midnight-400">
-              <Activity className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>No transactions found.</p>
+            <div className="py-12 text-center text-surface-400">
+              No transactions found
             </div>
           )}
         </div>
@@ -194,58 +122,101 @@ export function TransactionsPanel() {
   );
 }
 
+function StatCard({
+  label,
+  value,
+  subtitle,
+  positive,
+}: {
+  label: string;
+  value: string;
+  subtitle?: string;
+  positive?: boolean;
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-surface-200 p-4">
+      <div className="text-sm text-surface-500">{label}</div>
+      <div
+        className={`text-xl font-semibold mt-1 tabular-nums ${
+          positive !== undefined
+            ? positive
+              ? "text-success"
+              : "text-danger"
+            : "text-surface-900"
+        }`}
+      >
+        {value}
+      </div>
+      {subtitle && (
+        <div className="text-xs text-surface-400 mt-1">{subtitle}</div>
+      )}
+    </div>
+  );
+}
+
 function TransactionRow({ transaction }: { transaction: Transaction }) {
-  const isBuy = transaction.action === 'buy';
-  const profitClass = transaction.profitUsdt !== null 
-    ? transaction.profitUsdt >= 0 ? 'text-volt-400' : 'text-red-400'
-    : 'text-midnight-500';
+  const isBuy = transaction.action === "buy";
 
   return (
-    <tr className="hover:bg-midnight-900/30 transition-colors border-b border-midnight-800/50 last:border-0">
-      <td className="pl-4 text-midnight-300">
-        <div>
-          <div>{format(new Date(transaction.executedAt), 'MMM d, yyyy')}</div>
-          <div className="text-xs text-midnight-500">{format(new Date(transaction.executedAt), 'HH:mm:ss')}</div>
+    <tr className="hover:bg-surface-50">
+      <td className="py-3 px-6">
+        <div className="text-surface-900">
+          {format(new Date(transaction.executedAt), "MMM d, yyyy")}
+        </div>
+        <div className="text-xs text-surface-400">
+          {format(new Date(transaction.executedAt), "HH:mm")}
         </div>
       </td>
-      <td>
-        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-          isBuy 
-            ? 'bg-volt-500/20 text-volt-400' 
-            : 'bg-red-500/20 text-red-400'
-        }`}>
-          {isBuy ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-          {transaction.action.toUpperCase()}
+      <td className="py-3 px-6">
+        <span
+          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+            isBuy
+              ? "bg-success/10 text-success"
+              : "bg-warning/10 text-warning-dark"
+          }`}
+        >
+          {transaction.action}
         </span>
       </td>
-      <td className="font-mono">{transaction.amount.toFixed(6)}</td>
-      <td className="font-mono">${transaction.price.toFixed(2)}</td>
-      <td className="font-mono">${transaction.valueUsdt.toFixed(2)}</td>
-      <td className="font-mono text-midnight-500">${(transaction.fee || 0).toFixed(4)}</td>
-      <td className={`font-mono ${profitClass}`}>
-        {transaction.profitUsdt !== null 
-          ? `${transaction.profitUsdt >= 0 ? '+' : ''}$${transaction.profitUsdt.toFixed(2)}`
-          : '—'
-        }
-        {transaction.profitPercent !== null && (
-          <span className="text-xs ml-1">({transaction.profitPercent.toFixed(1)}%)</span>
+      <td className="py-3 px-6 text-right font-mono text-surface-600">
+        {transaction.amount.toFixed(6)}
+      </td>
+      <td className="py-3 px-6 text-right font-mono">
+        ${transaction.price.toFixed(0)}
+      </td>
+      <td className="py-3 px-6 text-right font-mono">
+        ${transaction.valueUsdt.toFixed(2)}
+      </td>
+      <td className="py-3 px-6 text-right font-mono">
+        {transaction.profitUsdt !== null ? (
+          <span
+            className={
+              transaction.profitUsdt >= 0 ? "text-success" : "text-danger"
+            }
+          >
+            {transaction.profitUsdt >= 0 ? "+" : ""}$
+            {transaction.profitUsdt.toFixed(2)}
+          </span>
+        ) : (
+          <span className="text-surface-300">—</span>
         )}
       </td>
-      <td>
+      <td className="py-3 px-6">
         {transaction.regime ? (
-          <span className={`px-2 py-1 rounded text-xs font-medium ${
-            transaction.regime.includes('fear') ? 'bg-volt-500/20 text-volt-400' :
-            transaction.regime.includes('greed') ? 'bg-red-500/20 text-red-400' :
-            'bg-midnight-700 text-midnight-300'
-          }`}>
-            {transaction.regime.replace('_', ' ')}
+          <span
+            className={`text-xs px-2 py-0.5 rounded ${
+              transaction.regime.includes("fear")
+                ? "bg-emerald-50 text-emerald-700"
+                : transaction.regime.includes("greed")
+                ? "bg-orange-50 text-orange-700"
+                : "bg-surface-100 text-surface-600"
+            }`}
+          >
+            {transaction.regime.replace("_", " ")}
           </span>
-        ) : '—'}
-      </td>
-      <td className="pr-4 max-w-xs">
-        <span className="text-xs text-midnight-400 truncate block" title={transaction.reason || ''}>
-          {transaction.reason || '—'}
-        </span>
+        ) : (
+          <span className="text-surface-300">—</span>
+        )}
       </td>
     </tr>
   );
