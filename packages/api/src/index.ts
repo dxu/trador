@@ -1,12 +1,15 @@
 import { Elysia, t } from "elysia";
 import { cors } from "@elysiajs/cors";
-import { staticPlugin } from "@elysiajs/static";
+// Static files are served manually below
 import { desc, eq, and, isNull, sql } from "drizzle-orm";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// In Docker: __dirname = /app/packages/api/src, dist is at /app/packages/web/dist
 const DIST_PATH = resolve(__dirname, "../../web/dist");
+
+console.log("📁 Static files path:", DIST_PATH);
 import { createHash, randomBytes } from "crypto";
 
 // ============================================================================
@@ -68,7 +71,7 @@ import { dataIngestionService } from "./services/dataIngestionService";
 
 const app = new Elysia()
   .use(cors())
-  .use(staticPlugin({ assets: DIST_PATH, prefix: "/" }))
+  // Static files served via explicit routes below
 
   // ============================================================================
   // AUTHENTICATION ROUTES (unprotected)
@@ -1041,7 +1044,34 @@ const app = new Elysia()
   // FRONTEND FALLBACK
   // ============================================================================
 
-  .get("*", () => Bun.file(resolve(DIST_PATH, "index.html")))
+  // Serve static assets explicitly
+  .get("/assets/*", async ({ params }) => {
+    const filePath = resolve(DIST_PATH, "assets", params["*"]);
+    const file = Bun.file(filePath);
+    if (await file.exists()) {
+      return new Response(file);
+    }
+    return new Response("Not found", { status: 404 });
+  })
+
+  .get("/favicon.svg", async () => {
+    const file = Bun.file(resolve(DIST_PATH, "favicon.svg"));
+    if (await file.exists()) {
+      return new Response(file, {
+        headers: { "Content-Type": "image/svg+xml" },
+      });
+    }
+    return new Response("Not found", { status: 404 });
+  })
+
+  // SPA fallback - serve index.html for all other routes
+  .get("*", async () => {
+    const indexPath = resolve(DIST_PATH, "index.html");
+    const content = await Bun.file(indexPath).text();
+    return new Response(content, {
+      headers: { "Content-Type": "text/html" },
+    });
+  })
 
   .listen(process.env.PORT || 3000);
 
