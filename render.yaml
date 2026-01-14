@@ -14,13 +14,19 @@ services:
           name: trador-db
           property: connectionString
       - key: EXCHANGE_ID
-        value: binance
+        value: kraken
       - key: EXCHANGE_TEST_MODE
-        value: "true"
+        value: "false"
       - key: EXCHANGE_API_KEY
         sync: false
       - key: EXCHANGE_SECRET
         sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: APP_PASSWORD
+        sync: false
+      - key: DATA_INGESTION_ENABLED
+        value: "true"
 
 databases:
   - name: trador-db
