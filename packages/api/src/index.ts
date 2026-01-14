@@ -2,6 +2,11 @@ import { Elysia, t } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { staticPlugin } from "@elysiajs/static";
 import { desc, eq, and, isNull, sql } from "drizzle-orm";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const DIST_PATH = resolve(__dirname, "../../web/dist");
 import { createHash, randomBytes } from "crypto";
 
 // ============================================================================
@@ -63,7 +68,7 @@ import { dataIngestionService } from "./services/dataIngestionService";
 
 const app = new Elysia()
   .use(cors())
-  .use(staticPlugin({ assets: "../web/dist", prefix: "/" }))
+  .use(staticPlugin({ assets: DIST_PATH, prefix: "/" }))
 
   // ============================================================================
   // AUTHENTICATION ROUTES (unprotected)
@@ -1036,7 +1041,7 @@ const app = new Elysia()
   // FRONTEND FALLBACK
   // ============================================================================
 
-  .get("*", () => Bun.file("../web/dist/index.html"))
+  .get("*", () => Bun.file(resolve(DIST_PATH, "index.html")))
 
   .listen(process.env.PORT || 3000);
 
