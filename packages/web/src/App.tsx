@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import useSWR from "swr";
-import { api, getAuthToken, clearAuthToken } from "./api";
+import { api, getAuthToken } from "./api";
 import { Dashboard } from "./components/Dashboard";
 import { TransactionsPanel } from "./components/TransactionsPanel";
 import { SettingsPanel } from "./components/SettingsPanel";

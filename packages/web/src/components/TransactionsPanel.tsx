@@ -2,15 +2,9 @@ import { useState } from "react";
 import useSWR from "swr";
 import { format } from "date-fns";
 import { api } from "../api";
-import type { Transaction, RiskProfile } from "../types";
+import type { Transaction } from "../types";
 
 type FilterAction = "all" | "buy" | "sell";
-
-const RISK_STYLES: Record<RiskProfile, string> = {
-  conservative: "bg-blue-50 text-blue-700",
-  moderate: "bg-purple-50 text-purple-700",
-  aggressive: "bg-orange-50 text-orange-700",
-};
 
 export function TransactionsPanel() {
   const [actionFilter, setActionFilter] = useState<FilterAction>("all");
