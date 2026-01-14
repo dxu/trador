@@ -143,12 +143,21 @@ function PriceChart({ data }: { data: OHLCVData[] }) {
 // DATA TABLE
 // ============================================================================
 
-function DataTable({ data }: { data: OHLCVData[] }) {
+function DataTable({
+  data,
+  timeframe,
+}: {
+  data: OHLCVData[];
+  timeframe: string;
+}) {
   if (!data || data.length === 0) {
     return (
       <div className="text-center py-8 text-gray-400">No data available</div>
     );
   }
+
+  // Show time for intraday timeframes
+  const showTime = ["1m", "5m", "15m", "1h", "4h"].includes(timeframe);
 
   return (
     <div className="overflow-x-auto">
@@ -156,7 +165,7 @@ function DataTable({ data }: { data: OHLCVData[] }) {
         <thead>
           <tr className="border-b border-gray-200">
             <th className="text-left py-3 px-2 font-semibold text-gray-700">
-              Date
+              {showTime ? "Date & Time" : "Date"}
             </th>
             <th className="text-right py-3 px-2 font-semibold text-gray-700">
               Open
@@ -187,12 +196,19 @@ function DataTable({ data }: { data: OHLCVData[] }) {
                 key={row.timestamp}
                 className="border-b border-gray-100 hover:bg-gray-50"
               >
-                <td className="py-2 px-2 text-gray-600">
-                  {new Date(row.timestamp).toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    year: "2-digit",
-                  })}
+                <td className="py-2 px-2 text-gray-600 whitespace-nowrap">
+                  {showTime
+                    ? new Date(row.timestamp).toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : new Date(row.timestamp).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "2-digit",
+                      })}
                 </td>
                 <td className="py-2 px-2 text-right font-mono text-gray-900">
                   $
@@ -434,7 +450,7 @@ function DataViewer({ summary }: { summary: DataSummary[] | undefined }) {
           <PriceChart data={ohlcvData || []} />
         ) : (
           <div className="max-h-96 overflow-y-auto">
-            <DataTable data={ohlcvData || []} />
+            <DataTable data={ohlcvData || []} timeframe={selectedTimeframe} />
           </div>
         )}
       </div>

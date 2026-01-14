@@ -110,6 +110,22 @@ class DataIngestionService {
   async initialize(): Promise<void> {
     console.log("🚀 Initializing data ingestion service...");
 
+    // Clean up any configs for symbols not in our tracked list
+    const validSymbols = new Set(TRACKED_COINS);
+    const allConfigs = await db.select().from(dataIngestionConfig);
+
+    for (const config of allConfigs) {
+      if (!validSymbols.has(config.symbol)) {
+        await db
+          .delete(dataIngestionConfig)
+          .where(eq(dataIngestionConfig.id, config.id));
+        await db
+          .delete(historicalOhlcv)
+          .where(eq(historicalOhlcv.symbol, config.symbol));
+        console.log(`🗑️ Removed invalid symbol config: ${config.symbol}`);
+      }
+    }
+
     // Create default ingestion configs if none exist
     const existing = await db.select().from(dataIngestionConfig);
 
@@ -210,21 +226,43 @@ class DataIngestionService {
         await this.fetchDataForConfig(config);
         await this.sleep(REQUEST_DELAY_MS);
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+        const isBadSymbol =
+          errorMessage.includes("does not have market symbol") ||
+          errorMessage.includes("BadSymbol");
+
         console.error(
           `❌ Error fetching ${config.symbol} ${config.timeframe}:`,
-          error
+          isBadSymbol ? `Invalid symbol - disabling` : error
         );
 
-        // Update error count
-        await db
-          .update(dataIngestionConfig)
-          .set({
-            fetchErrorCount: config.fetchErrorCount + 1,
-            lastError: error instanceof Error ? error.message : "Unknown error",
-            lastErrorAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(dataIngestionConfig.id, config.id));
+        // If it's an invalid symbol, disable the config permanently
+        if (isBadSymbol) {
+          await db
+            .update(dataIngestionConfig)
+            .set({
+              enabled: false,
+              lastError: `Invalid symbol: ${config.symbol} not available on exchange`,
+              lastErrorAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(dataIngestionConfig.id, config.id));
+          console.log(
+            `⏸️ Disabled invalid config: ${config.symbol} ${config.timeframe}`
+          );
+        } else {
+          // Update error count for other errors
+          await db
+            .update(dataIngestionConfig)
+            .set({
+              fetchErrorCount: config.fetchErrorCount + 1,
+              lastError: errorMessage,
+              lastErrorAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(dataIngestionConfig.id, config.id));
+        }
 
         // Wait longer on error
         await this.sleep(RETRY_DELAY_MS);
@@ -251,10 +289,32 @@ class DataIngestionService {
         await this.fetchDataForConfig(config);
         await this.sleep(REQUEST_DELAY_MS);
       } catch (error) {
-        console.error(
-          `❌ Error fetching ${config.symbol} ${config.timeframe}:`,
-          error
-        );
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+        const isBadSymbol =
+          errorMessage.includes("does not have market symbol") ||
+          errorMessage.includes("BadSymbol");
+
+        if (isBadSymbol) {
+          // Disable invalid symbols
+          await db
+            .update(dataIngestionConfig)
+            .set({
+              enabled: false,
+              lastError: `Invalid symbol: ${config.symbol} not available on exchange`,
+              lastErrorAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(dataIngestionConfig.id, config.id));
+          console.log(
+            `⏸️ Disabled invalid config: ${config.symbol} ${config.timeframe}`
+          );
+        } else {
+          console.error(
+            `❌ Error fetching ${config.symbol} ${config.timeframe}:`,
+            error
+          );
+        }
       }
     }
 
