@@ -111,8 +111,12 @@ const app = new Elysia()
   // ============================================================================
 
   .derive(({ headers, path }) => {
-    // Skip auth for auth routes and static files
-    if (path.startsWith("/api/auth/") || !path.startsWith("/api/")) {
+    // Skip auth for auth routes, health check, and static files
+    if (
+      path.startsWith("/api/auth/") ||
+      path === "/api/health" ||
+      !path.startsWith("/api/")
+    ) {
       return { authenticated: true };
     }
 
