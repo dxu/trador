@@ -126,27 +126,33 @@ class DataIngestionService {
       }
     }
 
-    // Create default ingestion configs if none exist
+    // Create missing ingestion configs from defaults
     const existing = await db.select().from(dataIngestionConfig);
+    const existingKeys = new Set(
+      existing.map((c) => `${c.symbol}:${c.timeframe}`)
+    );
 
-    if (existing.length === 0) {
-      console.log("📝 Creating default ingestion configurations...");
-
-      for (const config of DEFAULT_INGESTION_CONFIG) {
+    let created = 0;
+    for (const config of DEFAULT_INGESTION_CONFIG) {
+      const key = `${config.symbol}:${config.timeframe}`;
+      if (!existingKeys.has(key)) {
         await db.insert(dataIngestionConfig).values({
           symbol: config.symbol,
           timeframe: config.timeframe,
           retentionDays: config.retentionDays,
           enabled: true,
         });
+        console.log(
+          `➕ Added missing config: ${config.symbol} ${config.timeframe}`
+        );
+        created++;
       }
-
-      console.log(
-        `✅ Created ${DEFAULT_INGESTION_CONFIG.length} ingestion configs`
-      );
-    } else {
-      console.log(`📋 Found ${existing.length} existing ingestion configs`);
     }
+
+    if (created > 0) {
+      console.log(`✅ Created ${created} new ingestion configs`);
+    }
+    console.log(`📋 Total ingestion configs: ${existing.length + created}`);
 
     // Do an initial fetch for all enabled configs
     await this.fetchAll();
