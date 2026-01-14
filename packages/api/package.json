@@ -14,7 +14,7 @@
     "@elysiajs/cors": "^1.0.2",
     "@elysiajs/static": "^1.0.3",
     "ccxt": "^4.2.28",
-    "drizzle-orm": "^0.29.3",
+    "drizzle-orm": "^0.30.0",
     "elysia": "^1.0.12",
     "postgres": "^3.4.3"
   },
