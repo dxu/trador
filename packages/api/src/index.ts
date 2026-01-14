@@ -2,6 +2,49 @@ import { Elysia, t } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { staticPlugin } from "@elysiajs/static";
 import { desc, eq, and, isNull, sql } from "drizzle-orm";
+import { createHash, randomBytes } from "crypto";
+
+// ============================================================================
+// AUTHENTICATION
+// ============================================================================
+
+const AUTH_PASSWORD = process.env.AUTH_PASSWORD || "changeme";
+const SESSION_SECRET =
+  process.env.SESSION_SECRET || randomBytes(32).toString("hex");
+
+// Store active sessions (in production, use Redis or DB)
+const activeSessions = new Map<string, { createdAt: Date; expiresAt: Date }>();
+
+function generateToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+function hashPassword(password: string): string {
+  return createHash("sha256")
+    .update(password + SESSION_SECRET)
+    .digest("hex");
+}
+
+function isValidSession(token: string | undefined): boolean {
+  if (!token) return false;
+  const session = activeSessions.get(token);
+  if (!session) return false;
+  if (new Date() > session.expiresAt) {
+    activeSessions.delete(token);
+    return false;
+  }
+  return true;
+}
+
+// Clean up expired sessions periodically
+setInterval(() => {
+  const now = new Date();
+  for (const [token, session] of activeSessions.entries()) {
+    if (now > session.expiresAt) {
+      activeSessions.delete(token);
+    }
+  }
+}, 60000); // Every minute
 import {
   db,
   botConfig,
@@ -16,10 +59,79 @@ import { tradingBot } from "./services/tradingBot";
 import { exchangeService } from "./services/exchange";
 import { marketAnalysisService } from "./services/marketAnalysis";
 import { backtestService } from "./services/backtestService";
+import { dataIngestionService } from "./services/dataIngestionService";
 
 const app = new Elysia()
   .use(cors())
   .use(staticPlugin({ assets: "../web/dist", prefix: "/" }))
+
+  // ============================================================================
+  // AUTHENTICATION ROUTES (unprotected)
+  // ============================================================================
+
+  .post(
+    "/api/auth/login",
+    async ({ body }) => {
+      if (body.password === AUTH_PASSWORD) {
+        const token = generateToken();
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+        activeSessions.set(token, { createdAt: now, expiresAt });
+
+        console.log(`🔐 New login session created`);
+        return { success: true, token, expiresAt: expiresAt.toISOString() };
+      }
+      return { success: false, error: "Invalid password" };
+    },
+    {
+      body: t.Object({
+        password: t.String(),
+      }),
+    }
+  )
+
+  .post("/api/auth/logout", async ({ headers }) => {
+    const token = headers.authorization?.replace("Bearer ", "");
+    if (token) {
+      activeSessions.delete(token);
+      console.log(`🔓 Session logged out`);
+    }
+    return { success: true };
+  })
+
+  .get("/api/auth/check", async ({ headers }) => {
+    const token = headers.authorization?.replace("Bearer ", "");
+    const valid = isValidSession(token);
+    return { authenticated: valid };
+  })
+
+  // ============================================================================
+  // AUTH MIDDLEWARE (protects all routes below)
+  // ============================================================================
+
+  .derive(({ headers, path }) => {
+    // Skip auth for auth routes and static files
+    if (path.startsWith("/api/auth/") || !path.startsWith("/api/")) {
+      return { authenticated: true };
+    }
+
+    const token = headers.authorization?.replace("Bearer ", "");
+    const authenticated = isValidSession(token);
+
+    if (!authenticated) {
+      throw new Error("Unauthorized");
+    }
+
+    return { authenticated };
+  })
+
+  .onError(({ error, set }) => {
+    if (error.message === "Unauthorized") {
+      set.status = 401;
+      return { error: "Unauthorized", message: "Please login to continue" };
+    }
+  })
 
   // ============================================================================
   // HEALTH & STATUS
@@ -768,6 +880,155 @@ const app = new Elysia()
   )
 
   // ============================================================================
+  // DATA INGESTION
+  // ============================================================================
+
+  .get("/api/ingestion/status", async () => {
+    return dataIngestionService.getStatus();
+  })
+
+  .get("/api/ingestion/configs", async () => {
+    return dataIngestionService.getConfigs();
+  })
+
+  .post("/api/ingestion/start", async () => {
+    await dataIngestionService.start();
+    return { success: true, message: "Data ingestion started" };
+  })
+
+  .post("/api/ingestion/stop", async () => {
+    dataIngestionService.stop();
+    return { success: true, message: "Data ingestion stopped" };
+  })
+
+  .post("/api/ingestion/fetch-all", async () => {
+    await dataIngestionService.fetchAll();
+    return { success: true, message: "Fetched data for all configs" };
+  })
+
+  .post(
+    "/api/ingestion/config",
+    async ({ body }) => {
+      const config = await dataIngestionService.addConfig(
+        body.symbol,
+        body.timeframe,
+        body.retentionDays ?? null
+      );
+      return { success: true, config };
+    },
+    {
+      body: t.Object({
+        symbol: t.String(),
+        timeframe: t.String(),
+        retentionDays: t.Optional(t.Number()),
+      }),
+    }
+  )
+
+  .post(
+    "/api/ingestion/config/:id/toggle",
+    async ({ params, body }) => {
+      await dataIngestionService.toggleConfig(params.id, body.enabled);
+      return { success: true };
+    },
+    {
+      body: t.Object({
+        enabled: t.Boolean(),
+      }),
+    }
+  )
+
+  .delete("/api/ingestion/config/:id", async ({ params }) => {
+    await dataIngestionService.deleteConfig(params.id);
+    return { success: true };
+  })
+
+  .post(
+    "/api/ingestion/backfill",
+    async ({ body }) => {
+      const startDate = new Date(body.startDate);
+      const endDate = body.endDate ? new Date(body.endDate) : new Date();
+
+      const result = await dataIngestionService.backfill(
+        body.symbol,
+        body.timeframe,
+        startDate,
+        endDate
+      );
+
+      return {
+        success: true,
+        ...result,
+        message: `Backfilled ${result.totalCandles} candles with ${result.errors} errors`,
+      };
+    },
+    {
+      body: t.Object({
+        symbol: t.String(),
+        timeframe: t.String(),
+        startDate: t.String(),
+        endDate: t.Optional(t.String()),
+      }),
+    }
+  )
+
+  .get("/api/ingestion/summary", async () => {
+    return dataIngestionService.getDataSummary();
+  })
+
+  .get("/api/ingestion/symbols", async () => {
+    return dataIngestionService.getAvailableSymbols();
+  })
+
+  .get("/api/ingestion/timeframes/:symbol", async ({ params }) => {
+    const symbol = decodeURIComponent(params.symbol);
+    return dataIngestionService.getAvailableTimeframes(symbol);
+  })
+
+  .get("/api/ingestion/data/:symbol/:timeframe", async ({ params, query }) => {
+    const symbol = decodeURIComponent(params.symbol);
+    const timeframe = params.timeframe;
+    const limit = query.limit ? parseInt(query.limit as string) : 100;
+    const startDate = query.startDate
+      ? new Date(query.startDate as string)
+      : undefined;
+    const endDate = query.endDate
+      ? new Date(query.endDate as string)
+      : undefined;
+
+    return dataIngestionService.getHistoricalData(
+      symbol,
+      timeframe,
+      limit,
+      startDate,
+      endDate
+    );
+  })
+
+  .post("/api/ingestion/cleanup-duplicates", async () => {
+    const deletedCount = await dataIngestionService.cleanupDuplicates();
+    return {
+      success: true,
+      deletedCount,
+      message: `Removed ${deletedCount} duplicates`,
+    };
+  })
+
+  .delete("/api/ingestion/symbol/:symbol", async ({ params }) => {
+    const symbol = decodeURIComponent(params.symbol);
+    const configsDeleted = await dataIngestionService.deleteConfigsBySymbol(
+      symbol
+    );
+    const dataDeleted = await dataIngestionService.deleteDataBySymbol(symbol);
+    return {
+      success: true,
+      configsDeleted,
+      dataDeleted,
+      message: `Removed ${configsDeleted} configs and ${dataDeleted} data points for ${symbol}`,
+    };
+  })
+
+  // ============================================================================
   // FRONTEND FALLBACK
   // ============================================================================
 
@@ -779,10 +1040,13 @@ const app = new Elysia()
 // STARTUP
 // ============================================================================
 
-tradingBot.initialize().then(() => {
-  const testMode = process.env.EXCHANGE_TEST_MODE === "true";
+// Initialize all services
+Promise.all([tradingBot.initialize(), dataIngestionService.initialize()]).then(
+  () => {
+    const testMode = process.env.EXCHANGE_TEST_MODE === "true";
+    const startIngestion = process.env.DATA_INGESTION_ENABLED !== "false";
 
-  console.log(`
+    console.log(`
   ╔═══════════════════════════════════════════════════════════════╗
   ║                                                               ║
   ║   🤖 TRADOR - Multi-Strategy Regime-Based Trading Bot         ║
@@ -802,8 +1066,18 @@ tradingBot.initialize().then(() => {
   ║   • ⚖️  Moderate (40%)     - Balanced approach                 ║
   ║   • 🚀 Aggressive (30%)   - Quick profits                     ║
   ║                                                               ║
+  ║   Data Ingestion: ${
+    startIngestion ? "✅ ENABLED" : "⏸️  DISABLED"
+  }                             ║
+  ║                                                               ║
   ╚═══════════════════════════════════════════════════════════════╝
   `);
-});
+
+    // Start data ingestion if enabled
+    if (startIngestion) {
+      dataIngestionService.start();
+    }
+  }
+);
 
 export type App = typeof app;

@@ -404,6 +404,38 @@ export type BacktestSnapshot = typeof backtestSnapshots.$inferSelect;
 export type NewBacktestSnapshot = typeof backtestSnapshots.$inferInsert;
 
 // ============================================================================
+// DATA INGESTION CONFIG
+// ============================================================================
+
+export const dataIngestionConfig = pgTable("data_ingestion_config", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  // What to ingest
+  symbol: text("symbol").notNull(),
+  timeframe: text("timeframe").notNull(), // '1d', '1h', '5m', etc.
+
+  // Status
+  enabled: boolean("enabled").notNull().default(true),
+  lastFetchAt: timestamp("last_fetch_at"),
+  lastDataTimestamp: timestamp("last_data_timestamp"), // Most recent candle we have
+
+  // Retention settings
+  retentionDays: integer("retention_days"), // null = keep forever
+
+  // Stats
+  totalCandles: integer("total_candles").notNull().default(0),
+  fetchErrorCount: integer("fetch_error_count").notNull().default(0),
+  lastError: text("last_error"),
+  lastErrorAt: timestamp("last_error_at"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type DataIngestionConfig = typeof dataIngestionConfig.$inferSelect;
+export type NewDataIngestionConfig = typeof dataIngestionConfig.$inferInsert;
+
+// ============================================================================
 // DEFAULT STRATEGY PRESETS
 // ============================================================================
 
