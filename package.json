@@ -6,16 +6,16 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
-    "dev:api": "npm run dev -w @trador/api",
-    "dev:web": "npm run dev -w @trador/web",
-    "build": "npm run build -w @trador/api && npm run build -w @trador/web",
-    "build:api": "npm run build -w @trador/api",
-    "build:web": "npm run build -w @trador/web",
-    "start": "npm run start -w @trador/api",
-    "db:generate": "npm run db:generate -w @trador/api",
-    "db:migrate": "npm run db:migrate -w @trador/api",
-    "db:push": "npm run db:push -w @trador/api"
+    "dev": "concurrently \"bun run --filter @trador/api dev\" \"bun run --filter @trador/web dev\"",
+    "dev:api": "bun run --filter @trador/api dev",
+    "dev:web": "bun run --filter @trador/web dev",
+    "build": "bun run --filter @trador/api build && bun run --filter @trador/web build",
+    "build:api": "bun run --filter @trador/api build",
+    "build:web": "bun run --filter @trador/web build",
+    "start": "bun run --filter @trador/api start",
+    "db:generate": "bun run --filter @trador/api db:generate",
+    "db:migrate": "bun run --filter @trador/api db:migrate",
+    "db:push": "bun run --filter @trador/api db:push"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
