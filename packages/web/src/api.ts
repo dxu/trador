@@ -116,6 +116,20 @@ export const api = {
   getDashboard: () => fetchApi<DashboardData>("/dashboard"),
 
   // ============================================================================
+  // BALANCE
+  // ============================================================================
+
+  getBalance: () =>
+    fetchApi<{
+      exchange: string;
+      total: number;
+      available: number;
+      inPositions: number;
+      isTestMode: boolean;
+      balances: Record<string, { free: number; used: number; total: number }>;
+    }>("/balance"),
+
+  // ============================================================================
   // BOT CONTROL
   // ============================================================================
 

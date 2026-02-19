@@ -4,6 +4,7 @@ import { api, getAuthToken } from "./api";
 import { Dashboard } from "./components/Dashboard";
 import { TransactionsPanel } from "./components/TransactionsPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { PortfolioPanel } from "./components/PortfolioPanel";
 import { LogsPanel } from "./components/LogsPanel";
 import { BacktestPanel } from "./components/BacktestPanel";
 import { DataPanel } from "./components/DataPanel";
@@ -11,6 +12,7 @@ import { Login } from "./components/Login";
 
 type Tab =
   | "dashboard"
+  | "portfolio"
   | "backtest"
   | "data"
   | "transactions"
@@ -69,6 +71,7 @@ export function App() {
 
   const tabs = [
     { id: "dashboard" as const, label: "Dashboard" },
+    { id: "portfolio" as const, label: "Portfolio" },
     { id: "backtest" as const, label: "Backtest" },
     { id: "data" as const, label: "Data" },
     { id: "transactions" as const, label: "Transactions" },
@@ -202,6 +205,11 @@ export function App() {
         {activeTab === "dashboard" && (
           <div className="max-w-6xl mx-auto px-6 py-8">
             <Dashboard dashboard={dashboard} onRefresh={mutate} />
+          </div>
+        )}
+        {activeTab === "portfolio" && (
+          <div className="max-w-6xl mx-auto px-6 py-8">
+            <PortfolioPanel onUpdate={mutate} />
           </div>
         )}
         {activeTab === "backtest" && <BacktestPanel />}

@@ -628,6 +628,59 @@ const app = new Elysia()
   )
 
   // ============================================================================
+  // BALANCE
+  // ============================================================================
+
+  .get("/api/balance", async () => {
+    try {
+      const balance = await exchangeService.getBalance();
+      const isTestMode = process.env.EXCHANGE_TEST_MODE === "true";
+
+      // Calculate totals (assuming USD-based)
+      let total = 0;
+      let available = 0;
+
+      if (balance) {
+        // Sum up USD/USDT balances
+        const usdBalance = balance["USD"] ||
+          balance["USDT"] || { free: 0, used: 0, total: 0 };
+        available = usdBalance.free || 0;
+
+        // Get total portfolio value
+        total = usdBalance.total || 0;
+
+        // Add crypto values (would need current prices to be accurate)
+        // For now, just report what we have
+      }
+
+      return {
+        exchange: process.env.EXCHANGE_ID || "kraken",
+        total: isTestMode ? 10000 : total,
+        available: isTestMode ? 8500 : available,
+        inPositions: isTestMode ? 1500 : total - available,
+        isTestMode,
+        balances: isTestMode
+          ? {
+              USD: { free: 8500, used: 1500, total: 10000 },
+              BTC: { free: 0.05, used: 0, total: 0.05 },
+            }
+          : balance || {},
+      };
+    } catch (error) {
+      console.error("Failed to fetch balance:", error);
+      return {
+        exchange: process.env.EXCHANGE_ID || "unknown",
+        total: 0,
+        available: 0,
+        inPositions: 0,
+        isTestMode: true,
+        balances: {},
+        error: "Failed to fetch balance",
+      };
+    }
+  })
+
+  // ============================================================================
   // DASHBOARD SUMMARY
   // ============================================================================
 
