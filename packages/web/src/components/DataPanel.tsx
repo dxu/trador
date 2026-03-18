@@ -1,249 +1,413 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import useSWR, { mutate } from "swr";
 import { api } from "../api";
-import type { DataSummary, IngestionStatus, OHLCVData } from "../types";
+import type { DataSummary, IngestionStatus, OHLCVData, MarketOverviewItem } from "../types";
 
 // ============================================================================
 // HELPERS
 // ============================================================================
 
-function formatDate(date: string | null): string {
-  if (!date) return "—";
-  return new Date(date).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+function formatNum(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toFixed(0);
 }
 
-function formatDateTime(date: string | null): string {
-  if (!date) return "Never";
-  return new Date(date).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function formatPrice(n: number): string {
+  if (n >= 10_000) return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  if (n >= 100) return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  if (n >= 1) return n.toFixed(2);
+  return n.toFixed(4);
 }
 
-function formatNumber(n: number): string {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return n.toString();
+function formatUsd(n: number): string {
+  return "$" + formatPrice(n);
 }
-
-const TIMEFRAME_LABELS: Record<string, string> = {
-  "1m": "1 Minute",
-  "5m": "5 Minutes",
-  "15m": "15 Minutes",
-  "1h": "1 Hour",
-  "4h": "4 Hours",
-  "1d": "Daily",
-};
 
 // ============================================================================
-// PRICE CHART
+// SPARKLINE
 // ============================================================================
 
-function PriceChart({ data }: { data: OHLCVData[] }) {
-  if (!data || data.length < 2) {
+function Sparkline({ data, positive }: { data: number[]; positive: boolean }) {
+  if (data.length < 2) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const w = 60;
+  const h = 20;
+
+  const points = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * w;
+      const y = h - ((v - min) / range) * h;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <svg width={w} height={h} className="inline-block">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={positive ? "#22c55e" : "#ef4444"}
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+// ============================================================================
+// INTERACTIVE CHART
+// ============================================================================
+
+const CHART_PADDING = { top: 16, right: 64, bottom: 32, left: 12 };
+const CHART_HEIGHT = 320;
+const VOLUME_HEIGHT = 48;
+const TOTAL_HEIGHT = CHART_HEIGHT + VOLUME_HEIGHT;
+
+function InteractiveChart({ data, timeframe }: { data: OHLCVData[]; timeframe: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<{
+    x: number;
+    index: number;
+    candle: OHLCVData;
+  } | null>(null);
+
+  const sorted = [...data].sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
+
+  // Price range
+  const closes = sorted.map((d) => d.close);
+  const allHighs = sorted.map((d) => d.high);
+  const allLows = sorted.map((d) => d.low);
+  const priceMin = Math.min(...allLows) * 0.998;
+  const priceMax = Math.max(...allHighs) * 1.002;
+  const priceRange = priceMax - priceMin || 1;
+
+  // Volume range
+  const volumes = sorted.map((d) => d.volume);
+  const volMax = Math.max(...volumes) || 1;
+
+  // Overall change
+  const isUp = closes.length > 1 && closes[closes.length - 1] >= closes[0];
+  const color = isUp ? "#22c55e" : "#ef4444";
+
+  // Chart dimensions in viewBox coords
+  const chartW = 1000;
+  const plotLeft = 10;
+  const plotRight = chartW - 60;
+  const plotW = plotRight - plotLeft;
+  const plotTop = CHART_PADDING.top;
+  const plotBottom = CHART_HEIGHT - 4;
+  const plotH = plotBottom - plotTop;
+
+  const xAt = (i: number) => plotLeft + (i / Math.max(sorted.length - 1, 1)) * plotW;
+  const yAt = (price: number) => plotTop + (1 - (price - priceMin) / priceRange) * plotH;
+  const volYAt = (vol: number) =>
+    CHART_HEIGHT + VOLUME_HEIGHT - (vol / volMax) * (VOLUME_HEIGHT - 4);
+
+  // Line points
+  const linePoints = sorted.map((d, i) => `${xAt(i)},${yAt(d.close)}`).join(" ");
+
+  // Area polygon
+  const areaPoints = `${xAt(0)},${plotBottom} ${linePoints} ${xAt(sorted.length - 1)},${plotBottom}`;
+
+  // Y-axis gridlines (5 levels)
+  const yTicks: number[] = [];
+  for (let i = 0; i <= 4; i++) {
+    yTicks.push(priceMin + (priceRange * i) / 4);
+  }
+
+  // X-axis labels (~6 labels)
+  const xLabelCount = Math.min(6, sorted.length);
+  const xLabels: { index: number; label: string }[] = [];
+  const showTime = ["1m", "5m", "15m", "1h", "4h"].includes(timeframe);
+  for (let i = 0; i < xLabelCount; i++) {
+    const idx = Math.round((i / (xLabelCount - 1)) * (sorted.length - 1));
+    const d = new Date(sorted[idx].timestamp);
+    const label = showTime
+      ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+        " " +
+        d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" });
+    xLabels.push({ index: idx, label });
+  }
+
+  // Mouse handling
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      const svg = e.currentTarget;
+      const rect = svg.getBoundingClientRect();
+      const mouseX = ((e.clientX - rect.left) / rect.width) * chartW;
+
+      // Find nearest candle
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < sorted.length; i++) {
+        const dist = Math.abs(xAt(i) - mouseX);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = i;
+        }
+      }
+
+      setHover({ x: xAt(bestIdx), index: bestIdx, candle: sorted[bestIdx] });
+    },
+    [sorted, chartW]
+  );
+
+  const handleMouseLeave = useCallback(() => setHover(null), []);
+
+  if (sorted.length < 2) {
     return (
-      <div className="h-64 flex items-center justify-center text-gray-400">
+      <div className="h-48 flex items-center justify-center text-base-content/30 text-sm">
         Not enough data to display chart
       </div>
     );
   }
 
-  // Sort by timestamp ascending for chart
-  const sorted = [...data].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-  );
-
-  const closes = sorted.map((d) => d.close);
-  const min = Math.min(...closes) * 0.995;
-  const max = Math.max(...closes) * 1.005;
-  const range = max - min || 1;
-
-  const points = sorted
-    .map((d, i) => {
-      const x = (i / (sorted.length - 1)) * 100;
-      const y = 100 - ((d.close - min) / range) * 100;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  const isPositive = closes[closes.length - 1] >= closes[0];
-  const currentPrice = closes[closes.length - 1];
-  const startPrice = closes[0];
-  const changePercent = ((currentPrice - startPrice) / startPrice) * 100;
+  const displayCandle = hover?.candle || sorted[sorted.length - 1];
+  const displayChange =
+    ((displayCandle.close - displayCandle.open) / displayCandle.open) * 100;
+  const displayUp = displayChange >= 0;
 
   return (
-    <div className="relative">
-      {/* Price labels */}
-      <div className="absolute top-0 right-0 text-right">
-        <div className="text-2xl font-bold text-gray-900">
-          $
-          {currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+    <div ref={containerRef}>
+      {/* OHLCV header */}
+      <div className="flex items-baseline gap-4 mb-2 flex-wrap">
+        <span className="text-2xl font-bold tabular-nums">{formatUsd(displayCandle.close)}</span>
+        <div className="flex gap-3 text-xs tabular-nums">
+          <span className="text-base-content/40">
+            O <span className="text-base-content/70">{formatUsd(displayCandle.open)}</span>
+          </span>
+          <span className="text-base-content/40">
+            H <span className="text-success/70">{formatUsd(displayCandle.high)}</span>
+          </span>
+          <span className="text-base-content/40">
+            L <span className="text-error/70">{formatUsd(displayCandle.low)}</span>
+          </span>
+          <span className="text-base-content/40">
+            V <span className="text-base-content/70">{formatNum(displayCandle.volume)}</span>
+          </span>
+          <span className={displayUp ? "text-success" : "text-error"}>
+            {displayUp ? "+" : ""}{displayChange.toFixed(2)}%
+          </span>
         </div>
-        <div
-          className={`text-sm font-medium ${
-            isPositive ? "text-green-600" : "text-red-600"
-          }`}
-        >
-          {isPositive ? "+" : ""}
-          {changePercent.toFixed(2)}%
-        </div>
+        {hover && (
+          <span className="text-xs text-base-content/40">
+            {new Date(displayCandle.timestamp).toLocaleString()}
+          </span>
+        )}
       </div>
 
-      {/* Chart */}
+      {/* SVG Chart */}
       <svg
         width="100%"
-        height={200}
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        className="overflow-visible"
+        viewBox={`0 0 ${chartW} ${TOTAL_HEIGHT}`}
+        className="overflow-visible cursor-crosshair"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
       >
         <defs>
-          <linearGradient id="priceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop
-              offset="0%"
-              stopColor={isPositive ? "#10b981" : "#ef4444"}
-              stopOpacity="0.2"
-            />
-            <stop
-              offset="100%"
-              stopColor={isPositive ? "#10b981" : "#ef4444"}
-              stopOpacity="0"
-            />
+          <linearGradient id="areaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
         </defs>
-        <polygon
-          points={`0,100 ${points} 100,100`}
-          fill="url(#priceGradient)"
-        />
-        <polyline
-          points={points}
-          fill="none"
-          stroke={isPositive ? "#10b981" : "#ef4444"}
-          strokeWidth="0.5"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
 
-      {/* Date range */}
-      <div className="flex justify-between text-xs text-gray-500 mt-2">
-        <span>{formatDate(sorted[0].timestamp)}</span>
-        <span>{formatDate(sorted[sorted.length - 1].timestamp)}</span>
-      </div>
+        {/* Y-axis gridlines */}
+        {yTicks.map((tick, i) => {
+          const y = yAt(tick);
+          return (
+            <g key={i}>
+              <line
+                x1={plotLeft}
+                y1={y}
+                x2={plotRight}
+                y2={y}
+                stroke="#a1a1aa"
+                strokeOpacity="0.06"
+                strokeWidth="1"
+              />
+              <text
+                x={plotRight + 6}
+                y={y + 3}
+                fill="#a1a1aa"
+                fillOpacity="0.3"
+                fontSize="10"
+                fontFamily="monospace"
+              >
+                {formatUsd(tick)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Area fill */}
+        <polygon points={areaPoints} fill="url(#areaGrad)" />
+
+        {/* Price line */}
+        <polyline
+          points={linePoints}
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+        />
+
+        {/* Volume bars */}
+        {sorted.map((d, i) => {
+          const barW = Math.max(plotW / sorted.length * 0.6, 1);
+          const barH = TOTAL_HEIGHT - volYAt(d.volume);
+          const up = d.close >= d.open;
+          return (
+            <rect
+              key={i}
+              x={xAt(i) - barW / 2}
+              y={volYAt(d.volume)}
+              width={barW}
+              height={barH}
+              fill={up ? "#22c55e" : "#ef4444"}
+              fillOpacity="0.3"
+            />
+          );
+        })}
+
+        {/* Volume separator line */}
+        <line
+          x1={plotLeft}
+          y1={CHART_HEIGHT}
+          x2={plotRight}
+          y2={CHART_HEIGHT}
+          stroke="#a1a1aa"
+          strokeOpacity="0.06"
+          strokeWidth="1"
+        />
+
+        {/* X-axis labels */}
+        {xLabels.map(({ index, label }) => (
+          <text
+            key={index}
+            x={xAt(index)}
+            y={TOTAL_HEIGHT + 14}
+            fill="#a1a1aa"
+            fillOpacity="0.3"
+            fontSize="10"
+            textAnchor="middle"
+            fontFamily="monospace"
+          >
+            {label}
+          </text>
+        ))}
+
+        {/* Crosshair */}
+        {hover && (
+          <>
+            {/* Vertical line */}
+            <line
+              x1={hover.x}
+              y1={plotTop}
+              x2={hover.x}
+              y2={TOTAL_HEIGHT}
+              stroke="#a1a1aa"
+              strokeOpacity="0.3"
+              strokeWidth="1"
+              strokeDasharray="3,3"
+            />
+            {/* Horizontal line at price */}
+            <line
+              x1={plotLeft}
+              y1={yAt(hover.candle.close)}
+              x2={plotRight}
+              y2={yAt(hover.candle.close)}
+              stroke="#a1a1aa"
+              strokeOpacity="0.2"
+              strokeWidth="1"
+              strokeDasharray="3,3"
+            />
+            {/* Price dot */}
+            <circle
+              cx={hover.x}
+              cy={yAt(hover.candle.close)}
+              r="3"
+              fill={color}
+              stroke="#1d232a"
+              strokeWidth="1.5"
+            />
+            {/* Price label on y-axis */}
+            <rect
+              x={plotRight + 2}
+              y={yAt(hover.candle.close) - 8}
+              width="54"
+              height="16"
+              rx="2"
+              fill="#a1a1aa"
+              fillOpacity="0.8"
+            />
+            <text
+              x={plotRight + 6}
+              y={yAt(hover.candle.close) + 3}
+              fill="#1d232a"
+              fontSize="10"
+              fontFamily="monospace"
+            >
+              {formatUsd(hover.candle.close)}
+            </text>
+          </>
+        )}
+      </svg>
     </div>
   );
 }
 
 // ============================================================================
-// DATA TABLE
+// OHLCV TABLE
 // ============================================================================
 
-function DataTable({
-  data,
-  timeframe,
-}: {
-  data: OHLCVData[];
-  timeframe: string;
-}) {
+function DataTable({ data, timeframe }: { data: OHLCVData[]; timeframe: string }) {
   if (!data || data.length === 0) {
-    return (
-      <div className="text-center py-8 text-gray-400">No data available</div>
-    );
+    return <div className="text-center py-6 text-base-content/30 text-sm">No data</div>;
   }
 
-  // Show time for intraday timeframes
   const showTime = ["1m", "5m", "15m", "1h", "4h"].includes(timeframe);
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-gray-200">
-            <th className="text-left py-3 px-2 font-semibold text-gray-700">
-              {showTime ? "Date & Time" : "Date"}
-            </th>
-            <th className="text-right py-3 px-2 font-semibold text-gray-700">
-              Open
-            </th>
-            <th className="text-right py-3 px-2 font-semibold text-gray-700">
-              High
-            </th>
-            <th className="text-right py-3 px-2 font-semibold text-gray-700">
-              Low
-            </th>
-            <th className="text-right py-3 px-2 font-semibold text-gray-700">
-              Close
-            </th>
-            <th className="text-right py-3 px-2 font-semibold text-gray-700">
-              Volume
-            </th>
-            <th className="text-right py-3 px-2 font-semibold text-gray-700">
-              Change
-            </th>
+    <div className="overflow-x-auto max-h-96">
+      <table className="table table-xs">
+        <thead className="sticky top-0 bg-base-100">
+          <tr className="text-base-content/40">
+            <th>{showTime ? "Time" : "Date"}</th>
+            <th className="text-right">Open</th>
+            <th className="text-right">High</th>
+            <th className="text-right">Low</th>
+            <th className="text-right">Close</th>
+            <th className="text-right">Volume</th>
+            <th className="text-right">Change</th>
           </tr>
         </thead>
         <tbody>
           {data.map((row) => {
-            const change = ((row.close - row.open) / row.open) * 100;
-            const isPositive = change >= 0;
+            const chg = ((row.close - row.open) / row.open) * 100;
+            const up = chg >= 0;
             return (
-              <tr
-                key={row.timestamp}
-                className="border-b border-gray-100 hover:bg-gray-50"
-              >
-                <td className="py-2 px-2 text-gray-600 whitespace-nowrap">
+              <tr key={row.timestamp} className="hover">
+                <td className="text-base-content/50 whitespace-nowrap">
                   {showTime
                     ? new Date(row.timestamp).toLocaleString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
+                        month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
                       })
                     : new Date(row.timestamp).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        year: "2-digit",
+                        month: "short", day: "numeric", year: "2-digit",
                       })}
                 </td>
-                <td className="py-2 px-2 text-right font-mono text-gray-900">
-                  $
-                  {row.open.toLocaleString(undefined, {
-                    maximumFractionDigits: 2,
-                  })}
-                </td>
-                <td className="py-2 px-2 text-right font-mono text-green-600">
-                  $
-                  {row.high.toLocaleString(undefined, {
-                    maximumFractionDigits: 2,
-                  })}
-                </td>
-                <td className="py-2 px-2 text-right font-mono text-red-600">
-                  $
-                  {row.low.toLocaleString(undefined, {
-                    maximumFractionDigits: 2,
-                  })}
-                </td>
-                <td className="py-2 px-2 text-right font-mono font-medium text-gray-900">
-                  $
-                  {row.close.toLocaleString(undefined, {
-                    maximumFractionDigits: 2,
-                  })}
-                </td>
-                <td className="py-2 px-2 text-right font-mono text-gray-500">
-                  {formatNumber(row.volume)}
-                </td>
-                <td
-                  className={`py-2 px-2 text-right font-mono font-medium ${
-                    isPositive ? "text-green-600" : "text-red-600"
-                  }`}
-                >
-                  {isPositive ? "+" : ""}
-                  {change.toFixed(2)}%
+                <td className="text-right font-mono">{formatUsd(row.open)}</td>
+                <td className="text-right font-mono text-success/70">{formatUsd(row.high)}</td>
+                <td className="text-right font-mono text-error/70">{formatUsd(row.low)}</td>
+                <td className="text-right font-mono font-medium">{formatUsd(row.close)}</td>
+                <td className="text-right font-mono text-base-content/40">{formatNum(row.volume)}</td>
+                <td className={`text-right font-mono ${up ? "text-success" : "text-error"}`}>
+                  {up ? "+" : ""}{chg.toFixed(2)}%
                 </td>
               </tr>
             );
@@ -255,204 +419,60 @@ function DataTable({
 }
 
 // ============================================================================
-// STATUS BADGE
+// MARKET OVERVIEW
 // ============================================================================
 
-function StatusBadge({ isRunning }: { isRunning: boolean }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${
-        isRunning ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600"
-      }`}
-    >
-      <span
-        className={`w-2 h-2 rounded-full ${
-          isRunning ? "bg-green-500 animate-pulse" : "bg-gray-400"
-        }`}
-      />
-      {isRunning ? "Running" : "Stopped"}
-    </span>
-  );
-}
-
-// ============================================================================
-// DATA CARD
-// ============================================================================
-
-function DataCard({ data }: { data: DataSummary }) {
-  const hasData = data.count > 0;
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <h3 className="font-semibold text-gray-900">
-            {data.symbol.replace("/USD", "")}
-          </h3>
-          <span className="text-xs text-gray-500">
-            {TIMEFRAME_LABELS[data.timeframe] || data.timeframe}
-          </span>
-        </div>
-        <span
-          className={`text-xs px-2 py-0.5 rounded-full ${
-            data.enabled
-              ? "bg-green-100 text-green-700"
-              : "bg-gray-100 text-gray-500"
-          }`}
-        >
-          {data.enabled ? "Active" : "Disabled"}
-        </span>
-      </div>
-
-      {hasData ? (
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Candles</span>
-            <span className="font-medium text-gray-900">
-              {formatNumber(data.count)}
-            </span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Range</span>
-            <span className="font-medium text-gray-900 text-right">
-              {formatDate(data.firstCandle)}
-              <br />
-              <span className="text-gray-400">→</span>{" "}
-              {formatDate(data.lastCandle)}
-            </span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Last Fetch</span>
-            <span className="text-gray-600">
-              {formatDateTime(data.lastFetch)}
-            </span>
-          </div>
-        </div>
-      ) : (
-        <div className="text-center py-4 text-gray-400 text-sm">
-          No data yet
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================================
-// DATA VIEWER
-// ============================================================================
-
-function DataViewer({ summary }: { summary: DataSummary[] | undefined }) {
-  const [selectedSymbol, setSelectedSymbol] = useState<string>("BTC/USD");
-  const [selectedTimeframe, setSelectedTimeframe] = useState<string>("1d");
-  const [viewMode, setViewMode] = useState<"chart" | "table">("chart");
-
-  // Get available symbols
-  const symbols = [...new Set(summary?.map((d) => d.symbol) || [])].sort();
-
-  // Get available timeframes for selected symbol
-  const timeframes =
-    summary
-      ?.filter((d) => d.symbol === selectedSymbol)
-      .map((d) => d.timeframe)
-      .sort((a, b) => {
-        const order = ["1d", "4h", "1h", "15m", "5m", "1m"];
-        return order.indexOf(a) - order.indexOf(b);
-      }) || [];
-
-  // Fetch data for selected symbol/timeframe
-  const { data: ohlcvData, isLoading } = useSWR<OHLCVData[]>(
-    selectedSymbol && selectedTimeframe
-      ? `ohlcv-${selectedSymbol}-${selectedTimeframe}`
-      : null,
-    () => api.getHistoricalData(selectedSymbol, selectedTimeframe, 100)
+function MarketOverview({ onSelectSymbol }: { onSelectSymbol: (symbol: string) => void }) {
+  const { data: market } = useSWR<MarketOverviewItem[]>(
+    "market-overview",
+    api.getMarketOverview,
+    { refreshInterval: 30000 }
   );
 
-  // Update timeframe when symbol changes
-  const handleSymbolChange = (symbol: string) => {
-    setSelectedSymbol(symbol);
-    const available =
-      summary?.filter((d) => d.symbol === symbol).map((d) => d.timeframe) || [];
-    if (available.length > 0 && !available.includes(selectedTimeframe)) {
-      setSelectedTimeframe(available[0]);
-    }
-  };
+  if (!market || market.length === 0) return null;
 
   return (
-    <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-lg overflow-hidden">
-      <div className="p-6 border-b border-gray-200 bg-gray-50">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <h2 className="text-xl font-bold text-gray-900">Price Data</h2>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Symbol Selector */}
-            <select
-              value={selectedSymbol}
-              onChange={(e) => handleSymbolChange(e.target.value)}
-              className="px-3 py-2 rounded-lg border-2 border-gray-300 bg-white text-gray-900 font-medium"
-            >
-              {symbols.map((s) => (
-                <option key={s} value={s}>
-                  {s.replace("/USD", "")}
-                </option>
-              ))}
-            </select>
-
-            {/* Timeframe Selector */}
-            <div className="flex rounded-lg border-2 border-gray-300 overflow-hidden">
-              {timeframes.map((tf) => (
-                <button
-                  key={tf}
-                  onClick={() => setSelectedTimeframe(tf)}
-                  className={`px-3 py-2 text-sm font-medium transition-colors ${
-                    selectedTimeframe === tf
-                      ? "bg-gray-900 text-white"
-                      : "bg-white text-gray-700 hover:bg-gray-100"
-                  }`}
-                >
-                  {tf}
-                </button>
-              ))}
-            </div>
-
-            {/* View Mode Toggle */}
-            <div className="flex rounded-lg border-2 border-gray-300 overflow-hidden">
-              <button
-                onClick={() => setViewMode("chart")}
-                className={`px-3 py-2 text-sm font-medium transition-colors ${
-                  viewMode === "chart"
-                    ? "bg-blue-600 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-100"
-                }`}
-              >
-                Chart
-              </button>
-              <button
-                onClick={() => setViewMode("table")}
-                className={`px-3 py-2 text-sm font-medium transition-colors ${
-                  viewMode === "table"
-                    ? "bg-blue-600 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-100"
-                }`}
-              >
-                Table
-              </button>
-            </div>
-          </div>
+    <div className="card bg-base-100">
+      <div className="card-body p-4">
+        <div className="overflow-x-auto">
+          <table className="table table-xs">
+            <thead>
+              <tr className="text-base-content/40">
+                <th>Asset</th>
+                <th className="text-right">Price</th>
+                <th className="text-right">24h</th>
+                <th className="text-right">24h High</th>
+                <th className="text-right">24h Low</th>
+                <th className="text-right">Volume</th>
+                <th className="text-right w-16">24h</th>
+              </tr>
+            </thead>
+            <tbody>
+              {market.map((item) => {
+                const up = item.change24h >= 0;
+                return (
+                  <tr
+                    key={item.symbol}
+                    className="hover cursor-pointer"
+                    onClick={() => onSelectSymbol(item.symbol)}
+                  >
+                    <td className="font-medium">{item.symbol.replace("/USD", "")}</td>
+                    <td className="text-right font-mono">{formatUsd(item.price)}</td>
+                    <td className={`text-right font-mono font-medium ${up ? "text-success" : "text-error"}`}>
+                      {up ? "+" : ""}{item.change24h.toFixed(2)}%
+                    </td>
+                    <td className="text-right font-mono text-base-content/50">{formatUsd(item.high24h)}</td>
+                    <td className="text-right font-mono text-base-content/50">{formatUsd(item.low24h)}</td>
+                    <td className="text-right font-mono text-base-content/50">{formatNum(item.volume24h)}</td>
+                    <td className="text-right">
+                      <Sparkline data={item.sparkline} positive={up} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      </div>
-
-      <div className="p-6">
-        {isLoading ? (
-          <div className="h-64 flex items-center justify-center">
-            <div className="w-8 h-8 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
-          </div>
-        ) : viewMode === "chart" ? (
-          <PriceChart data={ohlcvData || []} />
-        ) : (
-          <div className="max-h-96 overflow-y-auto">
-            <DataTable data={ohlcvData || []} timeframe={selectedTimeframe} />
-          </div>
-        )}
       </div>
     </div>
   );
@@ -463,246 +483,179 @@ function DataViewer({ summary }: { summary: DataSummary[] | undefined }) {
 // ============================================================================
 
 export function DataPanel() {
-  const [isStarting, setIsStarting] = useState(false);
-  const [isStopping, setIsStopping] = useState(false);
-  const [isFetching, setIsFetching] = useState(false);
-  const [isCleaning, setIsCleaning] = useState(false);
-  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useState("BTC/USD");
 
-  const { data: status, isLoading: statusLoading } = useSWR<IngestionStatus>(
+  const { data: status } = useSWR<IngestionStatus>(
     "ingestion-status",
     api.getIngestionStatus,
     { refreshInterval: 5000 }
   );
 
-  const { data: summary, isLoading: summaryLoading } = useSWR<DataSummary[]>(
+  const { data: summary } = useSWR<DataSummary[]>(
     "data-summary",
     api.getDataSummary,
-    { refreshInterval: 10000 }
+    { refreshInterval: 30000 }
   );
 
-  const handleStart = async () => {
-    setIsStarting(true);
+  const handleAction = async (action: string, fn: () => Promise<unknown>) => {
+    setActionLoading(action);
     try {
-      await api.startIngestion();
+      await fn();
       mutate("ingestion-status");
-    } finally {
-      setIsStarting(false);
-    }
-  };
-
-  const handleStop = async () => {
-    setIsStopping(true);
-    try {
-      await api.stopIngestion();
-      mutate("ingestion-status");
-    } finally {
-      setIsStopping(false);
-    }
-  };
-
-  const handleFetchAll = async () => {
-    setIsFetching(true);
-    try {
-      await api.fetchAllData();
       mutate("data-summary");
     } finally {
-      setIsFetching(false);
+      setActionLoading(null);
     }
   };
 
-  const handleCleanup = async () => {
-    setIsCleaning(true);
-    setCleanupMessage(null);
-    try {
-      const result = await api.cleanupDuplicates();
-      setCleanupMessage(`Removed ${result.deletedCount} duplicate entries`);
-      mutate("data-summary");
-    } catch (e) {
-      setCleanupMessage("Failed to cleanup duplicates");
-    } finally {
-      setIsCleaning(false);
-    }
-  };
-
-  const isLoading = statusLoading || summaryLoading;
-
-  // Group data by symbol
-  const groupedData =
-    summary?.reduce((acc, item) => {
-      if (!acc[item.symbol]) acc[item.symbol] = [];
-      acc[item.symbol].push(item);
-      return acc;
-    }, {} as Record<string, DataSummary[]>) || {};
-
-  // Calculate totals
   const totalCandles = summary?.reduce((sum, d) => sum + d.count, 0) || 0;
-  const activeConfigs = summary?.filter((d) => d.enabled).length || 0;
-  const totalSymbols = Object.keys(groupedData).length;
+  const activeFeeds = summary?.filter((d) => d.enabled).length || 0;
 
   return (
-    <div className="space-y-6">
-      {/* Data Viewer - Chart/Table */}
-      {summary && summary.length > 0 && <DataViewer summary={summary} />}
-
-      {/* Header */}
-      <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-lg overflow-hidden">
-        <div className="p-6 border-b border-gray-200 bg-gray-50">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">
-                Historical Data
-              </h2>
-              <p className="text-sm text-gray-600 mt-1">
-                Market data ingestion and storage
-              </p>
-            </div>
-            <StatusBadge isRunning={status?.isRunning || false} />
+    <div className="space-y-4">
+      {/* Status bar */}
+      <div className="flex items-center justify-between text-xs px-1">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <div className={`w-1.5 h-1.5 rounded-full ${status?.isRunning ? "bg-success animate-pulse" : "bg-base-content/20"}`} />
+            <span className={status?.isRunning ? "text-success/80" : "text-base-content/40"}>
+              {status?.isRunning ? "Ingesting" : "Stopped"}
+            </span>
           </div>
+          <span className="text-base-content/30">
+            {activeFeeds} feeds &middot; {formatNum(totalCandles)} candles
+          </span>
         </div>
-
-        <div className="p-6">
-          {/* Stats Row */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-gray-50 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-gray-900">
-                {totalSymbols}
-              </div>
-              <div className="text-sm text-gray-500">Symbols</div>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-gray-900">
-                {activeConfigs}
-              </div>
-              <div className="text-sm text-gray-500">Active Feeds</div>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-gray-900">
-                {formatNumber(totalCandles)}
-              </div>
-              <div className="text-sm text-gray-500">Total Candles</div>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-gray-900">
-                {status?.queueLength || 0}
-              </div>
-              <div className="text-sm text-gray-500">In Queue</div>
-            </div>
-          </div>
-
-          {/* Controls */}
-          <div className="flex flex-wrap gap-3">
-            {status?.isRunning ? (
-              <button
-                onClick={handleStop}
-                disabled={isStopping}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
-              >
-                {isStopping ? "Stopping..." : "Stop Ingestion"}
-              </button>
-            ) : (
-              <button
-                onClick={handleStart}
-                disabled={isStarting}
-                className="px-4 py-2 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
-              >
-                {isStarting ? "Starting..." : "Start Ingestion"}
-              </button>
-            )}
-
+        <div className="flex gap-1">
+          {status?.isRunning ? (
             <button
-              onClick={handleFetchAll}
-              disabled={isFetching}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              onClick={() => handleAction("stop", api.stopIngestion)}
+              disabled={actionLoading === "stop"}
+              className="btn btn-ghost btn-xs text-base-content/40 hover:text-error"
             >
-              {isFetching ? "Fetching..." : "Fetch All Now"}
+              Stop
             </button>
-
+          ) : (
             <button
-              onClick={handleCleanup}
-              disabled={isCleaning}
-              className="px-4 py-2 rounded-lg bg-gray-600 text-white font-medium hover:bg-gray-700 disabled:opacity-50 transition-colors"
+              onClick={() => handleAction("start", api.startIngestion)}
+              disabled={actionLoading === "start"}
+              className="btn btn-ghost btn-xs text-base-content/40 hover:text-success"
             >
-              {isCleaning ? "Cleaning..." : "Remove Duplicates"}
+              Start
             </button>
-          </div>
-
-          {cleanupMessage && (
-            <p className="text-sm text-green-600 mt-2">{cleanupMessage}</p>
           )}
         </div>
       </div>
 
-      {/* Data Grid by Symbol */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="w-8 h-8 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {Object.entries(groupedData).map(([symbol, items]) => (
-            <div key={symbol}>
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">
-                {symbol}
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {items
-                  .sort((a, b) => {
-                    const order = ["1d", "4h", "1h", "15m", "5m", "1m"];
-                    return (
-                      order.indexOf(a.timeframe) - order.indexOf(b.timeframe)
-                    );
-                  })
-                  .map((item) => (
-                    <DataCard
-                      key={`${item.symbol}-${item.timeframe}`}
-                      data={item}
-                    />
-                  ))}
-              </div>
-            </div>
-          ))}
-
-          {Object.keys(groupedData).length === 0 && (
-            <div className="text-center py-16 text-gray-400">
-              No data ingestion configured yet. Start the ingestion service to
-              begin collecting data.
-            </div>
-          )}
-        </div>
+      {/* Chart */}
+      {summary && summary.length > 0 && (
+        <ChartPanelWithSymbol summary={summary} symbol={selectedSymbol} />
       )}
 
-      {/* Info Section */}
-      <div className="bg-blue-50 rounded-xl border border-blue-200 p-6">
-        <h3 className="font-semibold text-blue-900 mb-2">
-          📊 About Data Ingestion
-        </h3>
-        <div className="text-sm text-blue-800 space-y-2">
-          <p>
-            The data ingestion service automatically fetches and stores
-            historical OHLCV (Open, High, Low, Close, Volume) data from Kraken
-            for multiple cryptocurrencies and timeframes.
-          </p>
-          <ul className="list-disc list-inside space-y-1 ml-2">
-            <li>
-              <strong>Daily (1d):</strong> Kept forever for long-term
-              backtesting
-            </li>
-            <li>
-              <strong>Hourly (1h):</strong> 90 days retention for medium-term
-              analysis
-            </li>
-            <li>
-              <strong>5-minute (5m):</strong> 7 days retention for fine-grained
-              analysis
-            </li>
-          </ul>
-          <p className="mt-2">
-            Data is fetched respecting Kraken's rate limits (2 second delay
-            between requests).
-          </p>
+      {/* Market overview */}
+      <MarketOverview
+        onSelectSymbol={(symbol) => setSelectedSymbol(symbol)}
+      />
+    </div>
+  );
+}
+
+// Wrapper to pass selected symbol into ChartPanel
+function ChartPanelWithSymbol({ summary, symbol }: { summary: DataSummary[]; symbol: string }) {
+  const [selectedSymbol, setSelectedSymbol] = useState(symbol);
+  const [selectedTimeframe, setSelectedTimeframe] = useState("1d");
+  const [view, setView] = useState<"chart" | "table">("chart");
+
+  // Sync when parent changes symbol (clicking market overview row)
+  const prevSymbol = useRef(symbol);
+  if (symbol !== prevSymbol.current) {
+    prevSymbol.current = symbol;
+    if (symbol !== selectedSymbol) {
+      setSelectedSymbol(symbol);
+    }
+  }
+
+  const symbols = [...new Set(summary.map((d) => d.symbol))].sort();
+  const timeframes =
+    summary
+      .filter((d) => d.symbol === selectedSymbol)
+      .map((d) => d.timeframe)
+      .sort((a, b) => {
+        const order = ["1d", "4h", "1h", "15m", "5m", "1m"];
+        return order.indexOf(a) - order.indexOf(b);
+      });
+
+  const { data: ohlcvData, isLoading } = useSWR<OHLCVData[]>(
+    selectedSymbol && selectedTimeframe
+      ? `ohlcv-${selectedSymbol}-${selectedTimeframe}`
+      : null,
+    () => api.getHistoricalData(selectedSymbol, selectedTimeframe, 500)
+  );
+
+  const handleSymbolChange = (s: string) => {
+    setSelectedSymbol(s);
+    const available = summary.filter((d) => d.symbol === s).map((d) => d.timeframe);
+    if (available.length > 0 && !available.includes(selectedTimeframe)) {
+      setSelectedTimeframe(available[0]);
+    }
+  };
+
+  return (
+    <div className="card bg-base-100">
+      <div className="card-body p-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <select
+            value={selectedSymbol}
+            onChange={(e) => handleSymbolChange(e.target.value)}
+            className="select select-bordered select-xs font-medium"
+          >
+            {symbols.map((s) => (
+              <option key={s} value={s}>{s.replace("/USD", "")}</option>
+            ))}
+          </select>
+
+          <div className="join">
+            {timeframes.map((tf) => (
+              <button
+                key={tf}
+                onClick={() => setSelectedTimeframe(tf)}
+                className={`join-item btn btn-xs ${selectedTimeframe === tf ? "btn-primary" : "btn-ghost"}`}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+
+          <div className="ml-auto join">
+            <button
+              onClick={() => setView("chart")}
+              className={`join-item btn btn-xs ${view === "chart" ? "btn-active" : "btn-ghost"}`}
+            >
+              Chart
+            </button>
+            <button
+              onClick={() => setView("table")}
+              className={`join-item btn btn-xs ${view === "table" ? "btn-active" : "btn-ghost"}`}
+            >
+              Table
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          {isLoading ? (
+            <div className="h-64 flex items-center justify-center">
+              <span className="loading loading-spinner loading-sm" />
+            </div>
+          ) : view === "chart" ? (
+            <InteractiveChart data={ohlcvData || []} timeframe={selectedTimeframe} />
+          ) : (
+            <DataTable data={ohlcvData || []} timeframe={selectedTimeframe} />
+          )}
         </div>
       </div>
     </div>
   );
 }
+

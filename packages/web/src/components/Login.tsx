@@ -17,14 +17,13 @@ export function Login({ onLogin }: LoginProps) {
 
     try {
       const result = await api.login(password);
-      
       if (result.success && result.token) {
         setAuthToken(result.token);
         onLogin();
       } else {
         setError(result.error || "Login failed");
       }
-    } catch (err) {
+    } catch {
       setError("Failed to connect to server");
     } finally {
       setIsLoading(false);
@@ -32,68 +31,42 @@ export function Login({ onLogin }: LoginProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="max-w-md w-full">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gray-900 mb-4">
-            <svg
-              className="w-8 h-8 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-              />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Trador</h1>
-          <p className="text-gray-500 mt-1">Enter your password to continue</p>
+    <div className="min-h-screen bg-base-300 flex items-center justify-center px-4">
+      <div className="w-full max-w-xs">
+        <div className="text-center mb-6">
+          <h1 className="text-xl font-bold tracking-tight">trador</h1>
+          <p className="text-sm text-base-content/40 mt-1">Market data platform</p>
         </div>
 
-        {/* Login Form */}
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-8">
-          <div className="mb-6">
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-gray-700 mb-2"
-            >
-              Password
-            </label>
+        <form onSubmit={handleSubmit} className="card bg-base-100">
+          <div className="card-body p-5 gap-4">
             <input
-              id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
-              className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors text-gray-900"
+              placeholder="Password"
+              className="input input-bordered input-sm w-full"
               autoFocus
               required
             />
+
+            {error && (
+              <p className="text-error text-xs">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading || !password}
+              className="btn btn-primary btn-sm w-full"
+            >
+              {isLoading ? (
+                <span className="loading loading-spinner loading-xs" />
+              ) : (
+                "Sign in"
+              )}
+            </button>
           </div>
-
-          {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isLoading || !password}
-            className="w-full py-3 px-4 rounded-lg bg-gray-900 text-white font-semibold hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {isLoading ? "Signing in..." : "Sign In"}
-          </button>
         </form>
-
-        <p className="text-center text-sm text-gray-400 mt-6">
-          Crypto Trading Bot • Secure Access
-        </p>
       </div>
     </div>
   );

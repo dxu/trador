@@ -843,6 +843,69 @@ class DataIngestionService {
   }
 
   // ============================================================================
+  // MARKET OVERVIEW
+  // ============================================================================
+
+  async getMarketOverview(): Promise<
+    Array<{
+      symbol: string;
+      price: number;
+      change24h: number;
+      high24h: number;
+      low24h: number;
+      volume24h: number;
+      sparkline: number[];
+    }>
+  > {
+    const symbols = await this.getAvailableSymbols();
+    const results = [];
+
+    for (const symbol of symbols) {
+      // Get latest 1h candles (25 = current + 24h of data for change calc + sparkline)
+      const candles = await db
+        .selectDistinctOn([historicalOhlcv.timestamp], {
+          timestamp: historicalOhlcv.timestamp,
+          open: historicalOhlcv.open,
+          high: historicalOhlcv.high,
+          low: historicalOhlcv.low,
+          close: historicalOhlcv.close,
+          volume: historicalOhlcv.volume,
+        })
+        .from(historicalOhlcv)
+        .where(
+          and(
+            eq(historicalOhlcv.symbol, symbol),
+            eq(historicalOhlcv.timeframe, "1h")
+          )
+        )
+        .orderBy(desc(historicalOhlcv.timestamp))
+        .limit(25);
+
+      if (candles.length === 0) continue;
+
+      const sorted = [...candles].reverse();
+      const latest = sorted[sorted.length - 1];
+      const price = latest.close;
+
+      // 24h change: compare to candle ~24h ago
+      const old = sorted[0];
+      const change24h = old ? ((price - old.close) / old.close) * 100 : 0;
+
+      // 24h high/low/volume from the candles
+      const high24h = Math.max(...sorted.map((c) => c.high));
+      const low24h = Math.min(...sorted.map((c) => c.low));
+      const volume24h = sorted.reduce((sum, c) => sum + c.volume, 0);
+
+      // Sparkline: just the close prices
+      const sparkline = sorted.map((c) => c.close);
+
+      results.push({ symbol, price, change24h, high24h, low24h, volume24h, sparkline });
+    }
+
+    return results;
+  }
+
+  // ============================================================================
   // UTILS
   // ============================================================================
 

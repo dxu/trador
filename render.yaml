@@ -12,15 +12,7 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
-      - key: EXCHANGE_ID
-        value: kraken
-      - key: EXCHANGE_TEST_MODE
-        value: "false"
-      - key: EXCHANGE_API_KEY
-        sync: false
-      - key: EXCHANGE_SECRET
-        sync: false
-      - key: JWT_SECRET
+      - key: SESSION_SECRET
         generateValue: true
       - key: APP_PASSWORD
         sync: false
