@@ -1,4 +1,14 @@
-import type { IngestionStatus, IngestionConfig, DataSummary, OHLCVData, MarketOverviewItem } from "./types";
+import type {
+  IngestionStatus,
+  IngestionConfig,
+  DataSummary,
+  OHLCVData,
+  MarketOverviewItem,
+  Strategy,
+  BacktestRun,
+  BacktestTrade,
+  BacktestSnapshot,
+} from "./types";
 
 const API_BASE = "/api";
 
@@ -153,4 +163,33 @@ export const api = {
     fetchApi<{ success: boolean; deletedCount: number }>("/ingestion/cleanup-duplicates", {
       method: "POST",
     }),
+
+  // Strategies
+  getStrategies: () => fetchApi<Strategy[]>("/strategies"),
+
+  // Backtests
+  startBacktest: (config: {
+    strategySlug: string;
+    symbol: string;
+    timeframe: string;
+    startDate: string;
+    endDate: string;
+    initialCapital: number;
+    paramOverrides?: Record<string, any>;
+  }) =>
+    fetchApi<{ success: boolean; id: string }>("/backtests", {
+      method: "POST",
+      body: JSON.stringify(config),
+    }),
+
+  getBacktestRuns: () => fetchApi<BacktestRun[]>("/backtests"),
+
+  getBacktestResult: (id: string) => fetchApi<BacktestRun>(`/backtests/${id}`),
+
+  getBacktestTrades: (id: string) => fetchApi<BacktestTrade[]>(`/backtests/${id}/trades`),
+
+  getBacktestSnapshots: (id: string) => fetchApi<BacktestSnapshot[]>(`/backtests/${id}/snapshots`),
+
+  deleteBacktest: (id: string) =>
+    fetchApi<{ success: boolean }>(`/backtests/${id}`, { method: "DELETE" }),
 };

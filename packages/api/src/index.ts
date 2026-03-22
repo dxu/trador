@@ -4,6 +4,8 @@ import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createHash, randomBytes } from "crypto";
 import { dataIngestionService } from "./services/dataIngestionService";
+import { backtestService } from "./services/backtestService";
+import { strategyList, strategies } from "./strategies/index";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST_PATH = resolve(__dirname, "../../web/dist");
@@ -290,6 +292,69 @@ const app = new Elysia()
       dataDeleted,
       message: `Removed ${configsDeleted} configs and ${dataDeleted} data points for ${symbol}`,
     };
+  })
+
+  // ============================================================================
+  // STRATEGIES
+  // ============================================================================
+
+  .get("/api/strategies", async () => {
+    return strategyList.map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      category: s.category,
+      defaultParams: s.defaultParams,
+      paramLabels: s.paramLabels,
+      paramDescriptions: s.paramDescriptions,
+      minCandles: s.minCandles,
+    }));
+  })
+
+  // ============================================================================
+  // BACKTESTS
+  // ============================================================================
+
+  .post(
+    "/api/backtests",
+    async ({ body }) => {
+      const id = await backtestService.startBacktest(body);
+      return { success: true, id };
+    },
+    {
+      body: t.Object({
+        strategySlug: t.String(),
+        symbol: t.String(),
+        timeframe: t.String(),
+        startDate: t.String(),
+        endDate: t.String(),
+        initialCapital: t.Number(),
+        paramOverrides: t.Optional(t.Record(t.String(), t.Any())),
+      }),
+    }
+  )
+
+  .get("/api/backtests", async () => {
+    return backtestService.getBacktestRuns();
+  })
+
+  .get("/api/backtests/:id", async ({ params }) => {
+    const run = await backtestService.getBacktestRun(params.id);
+    if (!run) throw new Error("Backtest not found");
+    return run;
+  })
+
+  .get("/api/backtests/:id/trades", async ({ params }) => {
+    return backtestService.getBacktestTrades(params.id);
+  })
+
+  .get("/api/backtests/:id/snapshots", async ({ params }) => {
+    return backtestService.getBacktestSnapshots(params.id);
+  })
+
+  .delete("/api/backtests/:id", async ({ params }) => {
+    await backtestService.deleteBacktest(params.id);
+    return { success: true };
   })
 
   // ============================================================================
